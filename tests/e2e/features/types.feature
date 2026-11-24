@@ -33,3 +33,12 @@ Fonctionnalité: Types de contenu à champs
     Et dans le champ "Programme", j'insère un "Titre 2" avec le texte "Matin"
     Et je publie le contenu
     Alors la page publique "/ateliers/atelier-ceramique" affiche "<h2>Matin</h2>"
+
+  Scénario: Composer la page de liste d'un type
+    Quand j'ouvre la mise en page du type "Article"
+    Et je passe à la mise en page "Liste"
+    Alors l'aperçu affiche "Premier article"
+    Quand je sélectionne "Liste des contenus" dans la structure
+    Et je choisis "Liste" pour "Affichage"
+    Et j'enregistre le type
+    Alors la page publique "/blog" affiche "ws-entries--list"

@@ -8,7 +8,13 @@ import { Builder } from "../builder/builder.view";
 import type { ContentType, Layout } from "../site/site.type";
 import { Button, LinkButton } from "../ui/button.view";
 import { confirmDialog, promptDialog } from "../ui/dialog.view";
-import { ColorField, SelectField, TextField, Toggle } from "../ui/field.view";
+import {
+  ColorField,
+  Segmented,
+  SelectField,
+  TextField,
+  Toggle,
+} from "../ui/field.view";
 import { Badge, Empty, Notice, PageHead } from "../ui/layout.view";
 import { Modal } from "../ui/modal.view";
 import { api } from "./client";
@@ -162,9 +168,10 @@ function useType() {
           prefix: t.prefix,
           layoutId: t.layoutId,
           template,
+          archiveTemplate: t.archiveTemplate,
         },
       });
-      mutate({ ...res.type, template });
+      mutate({ ...res.type, template, archiveTemplate: t.archiveTemplate });
       setDirty(false);
       notify("Type enregistré");
     } catch (e) {
@@ -224,6 +231,8 @@ function TypeSettings(props: {
  */
 export function TypeEditorView() {
   const { type, change, save, dirty } = useType();
+  // Mise en page éditée : celle d'un contenu, ou la page de liste du type.
+  const [mode, setMode] = createSignal<"content" | "archive">("content");
   const [layouts] = createResource(() =>
     api<{ items: Layout[] }>("/api/layouts").then((r) => r.items),
   );
@@ -254,67 +263,102 @@ export function TypeEditorView() {
       }
     >
       {(t) => (
-        <Builder
-          scope="template"
-          zones={[{ key: "main", label: "Modèle" }]}
-          value={{ main: t().template }}
-          contentFields={t().fields}
-          onChange={(v) => change({ template: v.main })}
-          preview={(v) => ({
-            kind: "template",
-            typeId: t().id,
-            layoutId: t().layoutId,
-            blocks: v.main,
-          })}
-          bar={
-            <>
-              <LinkButton
-                variant="quiet"
-                icon="back"
-                href="/admin/types"
-                aria-label="Types"
-              />
-              <input
-                class="ui-input ui-input--title"
-                aria-label="Nom du type"
-                value={t().name}
-                onInput={(e) => change({ name: e.currentTarget.value })}
-              />
-            </>
-          }
-          actions={saveButton()}
-          settingsTitle="Type"
-          settings={
-            <>
-              <TypeSettings
-                type={t()}
-                layouts={layouts() ?? []}
-                onChange={change}
-              />
-              <div class="ui-field">
-                <span class="ui-field__label">Formulaire des contenus</span>
-                <Show
-                  when={templateFields(t().template).length}
-                  fallback={
+        <Show when={mode()} keyed>
+          {(m) => (
+            <Builder
+              scope={m === "content" ? "template" : "archive"}
+              zones={[
+                { key: "main", label: m === "content" ? "Contenu" : "Liste" },
+              ]}
+              value={{
+                main: m === "content" ? t().template : t().archiveTemplate,
+              }}
+              contentFields={t().fields}
+              onChange={(v) =>
+                change(
+                  m === "content"
+                    ? { template: v.main }
+                    : { archiveTemplate: v.main },
+                )
+              }
+              preview={(v) => ({
+                kind: m === "content" ? "template" : "archive",
+                typeId: t().id,
+                layoutId: t().layoutId,
+                blocks: v.main,
+              })}
+              bar={
+                <>
+                  <LinkButton
+                    variant="quiet"
+                    icon="back"
+                    href="/admin/types"
+                    aria-label="Types"
+                  />
+                  <input
+                    class="ui-input ui-input--title"
+                    aria-label="Nom du type"
+                    value={t().name}
+                    onInput={(e) => change({ name: e.currentTarget.value })}
+                  />
+                  <Show when={t().prefix}>
+                    <Segmented
+                      label="Mise en page"
+                      value={m}
+                      options={[
+                        { value: "content", label: "Contenu" },
+                        { value: "archive", label: "Liste" },
+                      ]}
+                      onChange={setMode}
+                    />
+                  </Show>
+                </>
+              }
+              actions={saveButton()}
+              settingsTitle="Type"
+              settings={
+                <>
+                  <TypeSettings
+                    type={t()}
+                    layouts={layouts() ?? []}
+                    onChange={change}
+                  />
+                  <Show when={m === "content"}>
+                    <div class="ui-field">
+                      <span class="ui-field__label">
+                        Formulaire des contenus
+                      </span>
+                      <Show
+                        when={templateFields(t().template).length}
+                        fallback={
+                          <p class="ui-muted">
+                            Titre{hasBody(t().template) ? " | corps" : ""}
+                          </p>
+                        }
+                      >
+                        <ol class="ui-form-preview">
+                          <li>Titre</li>
+                          <For each={templateFields(t().template)}>
+                            {(label) => <li>{label}</li>}
+                          </For>
+                          <Show when={hasBody(t().template)}>
+                            <li>Corps</li>
+                          </Show>
+                        </ol>
+                      </Show>
+                    </div>
+                  </Show>
+                  <Show when={m === "archive"}>
                     <p class="ui-muted">
-                      Titre{hasBody(t().template) ? " | corps" : ""}
+                      Les blocs posés dans « Liste des contenus » dessinent la
+                      carte de chaque contenu.
                     </p>
-                  }
-                >
-                  <ol class="ui-form-preview">
-                    <li>Titre</li>
-                    <For each={templateFields(t().template)}>
-                      {(label) => <li>{label}</li>}
-                    </For>
-                    <Show when={hasBody(t().template)}>
-                      <li>Corps</li>
-                    </Show>
-                  </ol>
-                </Show>
-              </div>
-            </>
-          }
-        />
+                  </Show>
+                </>
+              }
+            />
+          )}
+        </Show>
       )}
     </Show>
   );

@@ -741,3 +741,20 @@ Then(
 Then("le menu {string} est ouvert", async ({ page }, name: string) => {
   await expect(page.getByLabel("Nom", { exact: true })).toHaveValue(name);
 });
+
+/* Mise en page des types : contenu ou liste */
+When(
+  "j'ouvre la mise en page du type {string}",
+  async ({ page }, name: string) => {
+    await page.goto("/admin/types");
+    await page.getByRole("link", { name, exact: true }).click();
+    await expect(page.getByLabel("Nom du type")).toHaveValue(name);
+  },
+);
+
+When("je passe à la mise en page {string}", async ({ page }, mode: string) => {
+  await page
+    .getByRole("group", { name: "Mise en page" })
+    .getByRole("button", { name: mode, exact: true })
+    .click();
+});

@@ -1,5 +1,5 @@
 import { CONTENT_FIELD_TYPES, type ContentFieldType } from "../site/site.type";
-import type { Block, BlockDef, FieldDef } from "./block.type";
+import type { Block, BlockDef, EditorScope, FieldDef } from "./block.type";
 
 const align = (key = "align", label = "Alignement"): FieldDef => ({
   key,
@@ -652,7 +652,7 @@ export const BLOCKS: BlockDef[] = [
     label: "Titre du contenu",
     icon: "H",
     category: "dynamic",
-    scope: ["template"],
+    scope: ["template", "archive"],
     fields: [align()],
     defaults: () => ({ align: "left" }),
   },
@@ -661,7 +661,7 @@ export const BLOCKS: BlockDef[] = [
     label: "Date, auteur, tags",
     icon: "◷",
     category: "dynamic",
-    scope: ["template"],
+    scope: ["template", "archive"],
     fields: [
       { key: "showDate", label: "Date", type: "toggle" },
       { key: "showAuthor", label: "Auteur", type: "toggle" },
@@ -680,7 +680,7 @@ export const BLOCKS: BlockDef[] = [
     label: "Image de couverture",
     icon: "▧",
     category: "dynamic",
-    scope: ["template"],
+    scope: ["template", "archive"],
     fields: [
       {
         key: "fit",
@@ -706,11 +706,10 @@ export const BLOCKS: BlockDef[] = [
   },
   {
     type: "content-field",
-    label: "Champ",
+    label: "Valeur d'un champ",
     icon: "⊞",
     category: "dynamic",
-    hidden: true,
-    scope: ["template"],
+    scope: ["archive"],
     fields: [
       { key: "field", label: "Champ", type: "contentField" },
       {
@@ -737,11 +736,95 @@ export const BLOCKS: BlockDef[] = [
     }),
   },
   {
+    type: "content-excerpt",
+    label: "Description",
+    icon: "❞",
+    category: "dynamic",
+    scope: ["template", "archive"],
+    fields: [align()],
+    defaults: () => ({ align: "left" }),
+  },
+  {
+    type: "archive-title",
+    label: "Titre de la liste",
+    icon: "H",
+    category: "dynamic",
+    scope: ["archive"],
+    fields: [align()],
+    defaults: () => ({ align: "left" }),
+  },
+  {
+    type: "archive-list",
+    label: "Liste des contenus",
+    icon: "☰",
+    category: "dynamic",
+    scope: ["archive"],
+    // Les blocs posés dedans dessinent la carte, répétée pour chaque contenu.
+    container: true,
+    fields: [
+      {
+        key: "display",
+        label: "Affichage",
+        type: "select",
+        options: [
+          { value: "grid", label: "Grille de cartes" },
+          { value: "list", label: "Liste" },
+        ],
+      },
+      {
+        key: "columns",
+        label: "Colonnes",
+        type: "range",
+        min: 1,
+        max: 4,
+        when: (v) => v.display !== "list",
+      },
+      {
+        key: "perPage",
+        label: "Contenus par page",
+        type: "range",
+        min: 1,
+        max: 48,
+      },
+      {
+        key: "order",
+        label: "Ordre",
+        type: "select",
+        options: [
+          { value: "recent", label: "Plus récents d'abord" },
+          { value: "oldest", label: "Plus anciens d'abord" },
+          { value: "title", label: "Titre (A → Z)" },
+        ],
+      },
+      {
+        key: "pagination",
+        label: "Pagination",
+        type: "select",
+        options: [
+          { value: "numbers", label: "Numéros de page" },
+          { value: "prevnext", label: "Précédent / suivant" },
+          { value: "none", label: "Aucune" },
+        ],
+      },
+      { key: "cardStyle", label: "Fond de carte", type: "toggle" },
+      { key: "empty", label: "Texte si aucun contenu", type: "text" },
+    ],
+    defaults: () => ({
+      display: "grid",
+      columns: 3,
+      perPage: 12,
+      order: "recent",
+      pagination: "numbers",
+      cardStyle: true,
+      empty: "Aucun contenu pour le moment.",
+    }),
+  },
+  {
     type: "content-tags",
     label: "Tags",
     icon: "#",
     category: "dynamic",
-    scope: ["template"],
+    scope: ["template", "archive"],
     fields: [],
     defaults: () => ({}),
   },
@@ -1050,6 +1133,22 @@ export function createBlock(type: string): Block {
   const block: Block = { id: blockId(), type, props: def.defaults() };
   if (type === "columns") {
     block.children = [createBlock("column"), createBlock("column")];
+  } else if (type === "archive-list") {
+    // Carte par défaut : image, date, titre (lien), description.
+    block.children = [
+      { ...createBlock("content-cover"), props: { fit: "16/9" } },
+      {
+        ...createBlock("content-meta"),
+        props: {
+          showDate: true,
+          showAuthor: false,
+          showTags: false,
+          align: "left",
+        },
+      },
+      createBlock("content-title"),
+      createBlock("content-excerpt"),
+    ];
   } else if (def.container) {
     block.children = [];
   }
@@ -1087,7 +1186,7 @@ export function syncColumns(block: Block): Block {
   return { ...block, children };
 }
 
-export function paletteFor(scope: "content" | "layout" | "template") {
+export function paletteFor(scope: EditorScope) {
   return BLOCKS.filter(
     (def) => !def.hidden && (!def.scope || def.scope.includes(scope)),
   );

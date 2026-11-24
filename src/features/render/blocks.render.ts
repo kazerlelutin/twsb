@@ -33,7 +33,26 @@ export type RenderContext = {
     data?: Record<string, unknown>;
     fields?: ContentField[];
     tags?: Tag[];
+    excerpt?: string;
+    /** Présent dans une carte de liste : le titre devient un lien vers le contenu. */
+    url?: string;
   };
+  /** Page de liste d'un type (ou d'un tag) : titre, page courante, adresse de base. */
+  archive?: {
+    title: string;
+    typeId: string;
+    tagId?: string;
+    page: number;
+    basePath: string;
+    fields?: ContentField[];
+  };
+  postsPage?: (query: {
+    typeId: string;
+    tagId?: string;
+    page: number;
+    perPage: number;
+    order: string;
+  }) => { items: ContentSummary[]; total: number };
   currentPath?: string;
   editor?: boolean;
   /** Langue de la page : vide pour la langue principale. */
@@ -588,8 +607,20 @@ const RENDERERS: Record<string, Renderer> = {
       )
       .join("")}</div>`;
   },
-  "content-title": (ctx, _b, p) =>
-    `<h1 style="${alignStyle(p.align)}">${esc(ctx.content?.title ?? "Titre du contenu")}</h1>`,
+  "content-title": (ctx, _b, p) => {
+    const title = esc(ctx.content?.title ?? "Titre du contenu");
+    // Dans une carte : titre de niveau 2, lien vers le contenu (toute la carte est cliquable).
+    return ctx.content?.url
+      ? `<h2 class="ws-entry__title" style="${alignStyle(p.align)}"><a href="${esc(ctx.content.url)}">${title}</a></h2>`
+      : `<h1 style="${alignStyle(p.align)}">${title}</h1>`;
+  },
+  "content-excerpt": (ctx, _b, p) =>
+    ctx.content?.excerpt
+      ? `<p class="ws-excerpt" style="${alignStyle(p.align)}">${esc(ctx.content.excerpt)}</p>`
+      : placeholder(ctx, "Description"),
+  "archive-title": (ctx, _b, p) =>
+    `<h1 style="${alignStyle(p.align)}">${esc(ctx.archive?.title ?? "Titre de la liste")}</h1>`,
+  "archive-list": (ctx, block, p) => renderArchiveList(ctx, block, p),
   "content-meta": (ctx, _b, p) => {
     const parts = [
       bool(p.showDate ?? true) && ctx.content?.publishedAt
@@ -612,9 +643,10 @@ const RENDERERS: Record<string, Renderer> = {
     return tags ? `<p class="ws-tags">${tags}</p>` : placeholder(ctx, "Tags");
   },
   "content-cover": (ctx, _b, p) => {
+    const inCard = !!ctx.content?.url;
     const img = picture(ctx, ctx.content?.coverId, {
-      eager: true,
-      sizes: "100vw",
+      eager: !inCard,
+      sizes: inCard ? "(max-width: 768px) 100vw, 33vw" : "100vw",
     });
     if (!img) return placeholder(ctx, "Image de couverture");
     const fit = aspect(p.fit);
@@ -685,6 +717,109 @@ const RENDERERS: Record<string, Renderer> = {
         : ""
     }</p>`,
 };
+
+const SAMPLE_ENTRY: ContentSummary = {
+  id: "sample",
+  typeId: "",
+  title: "Titre d'exemple",
+  slug: "exemple",
+  status: "published",
+  excerpt: "Une description d'exemple, pour voir la carte.",
+  coverId: null,
+  publishedAt: Date.UTC(2026, 0, 15),
+  updatedAt: 0,
+  lang: "",
+  translationOf: null,
+  url: "#",
+  tags: [],
+};
+
+/**
+ * Liste paginée d'une page d'archive. Les blocs enfants dessinent la carte,
+ * rendue pour chaque contenu ; dans l'éditeur, seule la première carte est modifiable.
+ */
+function renderArchiveList(
+  ctx: RenderContext,
+  block: Block,
+  p: Record<string, unknown>,
+) {
+  const archive = ctx.archive;
+  const perPage = Math.min(48, Math.max(1, num(p.perPage, 12)));
+  const page = archive?.page ?? 1;
+  const result = ctx.postsPage?.({
+    typeId: archive?.typeId ?? "",
+    tagId: archive?.tagId,
+    page,
+    perPage,
+    order: str(p.order, "recent"),
+  }) ?? { items: [], total: 0 };
+  const items =
+    result.items.length || !ctx.editor ? result.items : [SAMPLE_ENTRY];
+  if (!items.length)
+    return `<p class="ws-entries__empty">${esc(str(p.empty, "Aucun contenu pour le moment."))}</p>`;
+  const children = block.children ?? [];
+  const card = bool(p.cardStyle ?? true);
+  const entries = items
+    .map((item, i) => {
+      const first = i === 0;
+      const entryCtx: RenderContext = {
+        ...ctx,
+        editor: ctx.editor && first,
+        // Le style des blocs de la carte n'est collecté qu'une fois.
+        css: first ? ctx.css : [],
+        content: {
+          title: item.title,
+          bodyHtml: "",
+          coverId: item.coverId,
+          publishedAt: item.publishedAt,
+          authorName: item.authorName,
+          data: item.data,
+          fields: archive?.fields,
+          tags: item.tags,
+          excerpt: item.excerpt,
+          url: item.url,
+        },
+      };
+      const inner = children.length
+        ? renderBlocks(entryCtx, children)
+        : `<h2 class="ws-entry__title"><a href="${esc(item.url)}">${esc(item.title)}</a></h2>`;
+      return `<article class="ws-entry${card ? " ws-entry--card" : ""}">${inner}</article>`;
+    })
+    .join("");
+  const list =
+    str(p.display) === "list"
+      ? `<div class="ws-entries ws-entries--list">${entries}</div>`
+      : `<div class="ws-entries ws-grid" style="--cols:${num(p.columns, 3)}">${entries}</div>`;
+  return (
+    list + pagination(ctx, result.total, perPage, str(p.pagination, "numbers"))
+  );
+}
+
+/** Pagination d'une archive : /blog, /blog/page/2, … */
+function pagination(
+  ctx: RenderContext,
+  total: number,
+  perPage: number,
+  style: string,
+) {
+  const archive = ctx.archive;
+  const pages = Math.ceil(total / perPage);
+  if (!archive || style === "none" || pages < 2) return "";
+  const page = archive.page;
+  const href = (n: number) =>
+    n <= 1 ? archive.basePath || "/" : `${archive.basePath}/page/${n}`;
+  const link = (n: number, label: string, rel?: string) =>
+    `<a href="${esc(href(n))}"${rel ? ` rel="${rel}"` : ""}${n === page ? ' aria-current="page"' : ""}>${label}</a>`;
+  const prev = page > 1 ? link(page - 1, "← Précédent", "prev") : "";
+  const next = page < pages ? link(page + 1, "Suivant →", "next") : "";
+  const numbers =
+    style === "numbers"
+      ? Array.from({ length: pages }, (_, i) =>
+          link(i + 1, String(i + 1)),
+        ).join("")
+      : "";
+  return `<nav class="ws-pagination" aria-label="Pagination">${prev}${numbers}${next}</nav>`;
+}
 
 /** Bloc-champ d'un modèle : affiche la valeur saisie dans le contenu. */
 const renderField: Renderer = (ctx, _block, p) => {

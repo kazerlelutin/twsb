@@ -1,5 +1,6 @@
 import type { Block } from "../features/blocks/block.type";
-import { blockId } from "../features/blocks/catalog";
+import { blockId, createBlock } from "../features/blocks/catalog";
+import { walk } from "../features/blocks/tree.service";
 import type { RenderContext } from "../features/render/blocks.render";
 import { esc } from "../features/render/html";
 import { renderDocument } from "../features/render/page.render";
@@ -27,6 +28,7 @@ import {
   mediaMap,
   pathOf,
   publishedOfType,
+  publishedPage,
   redirectFor,
   siteVersion,
   tagBySlug,
@@ -74,6 +76,7 @@ export function renderContext(
     menu: (id) => getMenu(id),
     posts: (typeId, limit, tagId) =>
       publishedOfType(typeId, Math.min(50, Math.max(1, limit)), tagId, lang),
+    postsPage: (query) => publishedPage({ ...query, lang }),
     tagUrl: (tag) => tagUrl(tag, lang),
     // Un lien vers un contenu mène à sa traduction dans la langue de la page.
     contentUrl: (id) => {
@@ -168,48 +171,74 @@ export function renderContent(content: Content, options: ContextOptions = {}) {
   });
 }
 
-function renderArchive(
-  archive: {
-    title: string;
-    typeId: string;
-    tagId?: string;
-    layout?: Layout;
-    lang?: string;
-  },
-  currentPath: string,
-) {
+/** Liste par défaut d'un type : titre, puis cartes paginées. */
+export const DEFAULT_ARCHIVE = (): Block[] => [
+  section([createBlock("archive-title"), createBlock("archive-list")]),
+];
+
+/** Réglages du bloc « Liste des contenus » d'un modèle de liste. */
+function listSettings(blocks: Block[]) {
+  let found: Block | undefined;
+  walk(blocks, (b) => {
+    if (!found && b.type === "archive-list") found = b;
+  });
+  return {
+    perPage: Math.min(48, Math.max(1, Number(found?.props.perPage) || 12)),
+    order: String(found?.props.order ?? "recent"),
+  };
+}
+
+type ArchiveInput = {
+  title: string;
+  typeId: string;
+  tagId?: string;
+  layout?: Layout;
+  lang?: string;
+  page: number;
+  basePath: string;
+  template?: Block[];
+  fields?: ContentType["fields"];
+};
+
+/** Page de liste d'un type ou d'un tag ; une page au-delà de la dernière n'existe pas. */
+function renderArchive(archive: ArchiveInput, currentPath: string) {
   const identity = getIdentity();
   const lang = archive.lang ?? "";
+  const main = archive.template?.length ? archive.template : DEFAULT_ARCHIVE();
+  const { perPage, order } = listSettings(main);
+  const { total } = publishedPage({
+    typeId: archive.typeId,
+    tagId: archive.tagId,
+    page: 1,
+    perPage: 1,
+    order,
+    lang,
+  });
+  if (archive.page > Math.max(1, Math.ceil(total / perPage))) return undefined;
   const ctx = renderContext(identity, { currentPath, lang });
   const languages = languageLinks(lang);
   ctx.languages = languages;
-  const main = [
-    section([
-      {
-        id: "a-title",
-        type: "heading",
-        props: { text: archive.title, level: "1" },
-      },
-      {
-        id: "a-list",
-        type: "posts",
-        props: {
-          typeId: archive.typeId,
-          tagId: archive.tagId ?? "",
-          limit: 50,
-          display: "list",
-          showCover: true,
-          showExcerpt: true,
-          showDate: true,
-        },
-      },
-    ]),
-  ];
+  ctx.archive = {
+    title: archive.title,
+    typeId: archive.typeId,
+    tagId: archive.tagId,
+    page: archive.page,
+    basePath: archive.basePath,
+    fields: archive.fields,
+  };
+  const path =
+    archive.page > 1
+      ? `${archive.basePath}/page/${archive.page}`
+      : archive.basePath;
   return renderDocument({
     ctx,
     layout: archive.layout ?? defaultLayout(),
     main,
-    title: archive.title,
+    title:
+      archive.page > 1
+        ? `${archive.title} | page ${archive.page}`
+        : archive.title,
+    canonical: `${env().publicUrl}${path}`,
     lang: languages.find((l) => l.current)?.tag,
   });
 }
@@ -250,8 +279,44 @@ export function resolvePath(pathname: string): {
   archive?: ContentType;
   tag?: Tag;
   lang: string;
+  page: number;
 } {
-  const parts = decodeURIComponent(pathname).split("/").filter(Boolean);
+  const resolved = resolveParts(
+    decodeURIComponent(pathname).split("/").filter(Boolean),
+  );
+  return { page: 1, ...resolved };
+}
+
+/** Pages suivantes d'une liste : …/page/2 (la page 1 garde l'adresse de base). */
+function pageSuffix(parts: string[]) {
+  const n = parts.length;
+  if (n >= 3 && parts[n - 2] === "page" && /^[1-9]\d{0,4}$/.test(parts[n - 1]))
+    return { parts: parts.slice(0, -2), page: Number(parts[n - 1]) };
+  return undefined;
+}
+
+function resolveParts(input: string[]): {
+  content?: Content;
+  archive?: ContentType;
+  tag?: Tag;
+  lang: string;
+  page?: number;
+} {
+  const parts = [...input];
+  const paged = pageSuffix(parts.slice(lang0(parts)));
+  if (paged && paged.page > 1) {
+    const lang = lang0(parts) ? (parts[0] as string) : "";
+    const base = paged.parts;
+    if (base.length === 1) {
+      const archive = typeByPrefix(base[0]);
+      if (archive) return { archive, lang, page: paged.page };
+    }
+    if (base.length === 2 && base[0] === TAG_PREFIX) {
+      const tag = tagBySlug(base[1]);
+      if (tag) return { tag, lang, page: paged.page };
+    }
+    return { lang };
+  }
   // Premier segment = code d'une langue secondaire active : /en/…
   const lang = siteLanguages().some((l) => l.code && l.code === parts[0])
     ? (parts.shift() as string)
@@ -285,6 +350,10 @@ export function resolvePath(pathname: string): {
   return { lang };
 }
 
+/** 1 si le premier segment est une langue secondaire active, sinon 0. */
+const lang0 = (parts: string[]) =>
+  siteLanguages().some((l) => l.code && l.code === parts[0]) ? 1 : 0;
+
 const cache = new Map<string, { version: number; response: SiteResponse }>();
 const CACHE_MAX = 500;
 
@@ -293,37 +362,46 @@ export function renderPublic(pathname: string): SiteResponse {
   const key = pathname.replace(/\/+$/, "") || "/";
   const hit = cache.get(key);
   if (hit && hit.version === siteVersion()) return hit.response;
-  const { content, archive, tag, lang } = resolvePath(key);
+  const { content, archive, tag, lang, page } = resolvePath(key);
+  const prefix = lang ? `/${lang}` : "";
+  const archiveHtml = archive
+    ? renderArchive(
+        {
+          title: archive.name,
+          typeId: archive.id,
+          layout: layoutFor(archive),
+          lang,
+          page,
+          basePath: `${prefix}/${archive.prefix}`,
+          template: archive.archiveTemplate,
+          fields: archive.fields,
+        },
+        key,
+      )
+    : tag
+      ? renderArchive(
+          {
+            title: tag.name,
+            typeId: "",
+            tagId: tag.id,
+            lang,
+            page,
+            basePath: tagUrl(tag, lang),
+          },
+          key,
+        )
+      : undefined;
   const moved = !content && !archive && !tag ? redirectFor(key) : undefined;
   const target = moved ? getContent(moved) : undefined;
   const location =
     target?.status === "published" ? contentPath(target.id) : undefined;
   const response: SiteResponse = content
     ? { status: 200, html: renderContent(content, { currentPath: key }) ?? "" }
-    : archive
-      ? {
-          status: 200,
-          html: renderArchive(
-            {
-              title: archive.name,
-              typeId: archive.id,
-              layout: layoutFor(archive),
-              lang,
-            },
-            key,
-          ),
-        }
-      : tag
-        ? {
-            status: 200,
-            html: renderArchive(
-              { title: tag.name, typeId: "", tagId: tag.id, lang },
-              key,
-            ),
-          }
-        : location
-          ? { status: 301, html: "", location }
-          : { status: 404, html: renderNotFound(key) };
+    : archiveHtml
+      ? { status: 200, html: archiveHtml }
+      : location
+        ? { status: 301, html: "", location }
+        : { status: 404, html: renderNotFound(key) };
   if (cache.size >= CACHE_MAX)
     cache.delete(cache.keys().next().value as string);
   cache.set(key, { version: siteVersion(), response });

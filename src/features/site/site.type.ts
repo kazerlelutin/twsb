@@ -258,6 +258,8 @@ export type ContentType = {
   prefix: string;
   /** Champs déduits des blocs-champs du modèle : le formulaire des contenus. */
   fields: ContentField[];
+  /** Mise en page de la liste du type (/blog…) ; vide : liste par défaut. */
+  archiveTemplate: Block[];
   /** Le modèle affiche le corps (bloc « Corps du contenu ») : il se rédige dans le contenu. */
   hasBody: boolean;
   layoutId: string | null;
@@ -309,7 +311,12 @@ export type ContentSummary = Pick<
   | "authorName"
   | "lang"
   | "translationOf"
-> & { url: string; tags: Tag[] };
+> & {
+  url: string;
+  tags: Tag[];
+  /** Valeurs des champs : affichables dans les cartes d'une liste. */
+  data?: Record<string, unknown>;
+};
 
 export type Language = { code: string; label: string };
 

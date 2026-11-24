@@ -76,6 +76,7 @@ import {
 } from "./revisions.server";
 import { sanitizeBlocks, sanitizeRich } from "./sanitize.server";
 import {
+  DEFAULT_ARCHIVE,
   DEFAULT_TEMPLATE,
   layoutFor,
   renderContent,
@@ -453,6 +454,7 @@ const typeInput = z.object({
     .transform((v) => slugify(v)),
   layoutId: z.string().nullable(),
   template: blocksOrEmpty,
+  archiveTemplate: blocksOrEmpty,
 });
 
 const RESERVED = new Set([
@@ -507,7 +509,16 @@ export const types = {
     await requireUser(request);
     const type = getType(params.id);
     if (!type) throw new HttpError(404, "Type introuvable.");
-    return json({ type: { ...type, contentCount: contentCount(type.id) } });
+    return json({
+      type: {
+        ...type,
+        // Liste jamais personnalisée : on part du modèle par défaut.
+        archiveTemplate: type.archiveTemplate.length
+          ? type.archiveTemplate
+          : sanitizeBlocks(DEFAULT_ARCHIVE()),
+        contentCount: contentCount(type.id),
+      },
+    });
   }),
   create: api(async ({ request }) => {
     await requireUser(request, "admin");
@@ -885,7 +896,7 @@ export const linkPreview = api(async ({ request }) => {
 
 /* Aperçu de l'éditeur */
 const previewInput = z.object({
-  kind: z.enum(["content", "layout", "template"]),
+  kind: z.enum(["content", "layout", "template", "archive"]),
   blocks: blocksOrEmpty,
   header: blocks.optional(),
   footer: blocks.optional(),
@@ -940,6 +951,15 @@ export const preview = api(async ({ request }) => {
       ? content.tags
       : [{ id: "x", name: "Exemple", slug: "exemple" }],
   };
+  if (input.kind === "archive" && type) {
+    ctx.archive = {
+      title: type.name,
+      typeId: type.id,
+      page: 1,
+      basePath: `/${type.prefix}`,
+      fields: type.fields,
+    };
+  }
   let layout = layoutFor(type);
   if (input.layoutId !== undefined)
     layout = input.layoutId ? getLayout(input.layoutId) : layout;

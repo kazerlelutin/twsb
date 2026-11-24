@@ -131,6 +131,21 @@ a.ws-card:hover h3{color:var(--ws-primary)}.ws-card h3{margin:0;font-size:1.2rem
 .ws-langs a{display:block;padding:.25rem .55rem;border-radius:var(--ws-radius);color:inherit;text-decoration:none;font-size:.9rem;font-weight:600}
 .ws-langs a:hover{color:var(--ws-primary)}.ws-langs a[aria-current]{background:var(--ws-surface);color:var(--ws-primary)}
 @media (max-width:560px){.ws-link-card--card{flex-direction:column}.ws-link-card--card .ws-link-card__img{width:100%;aspect-ratio:1.91/1}}
+.ws-entries{display:grid;gap:var(--gap,24px)}.ws-entries--list{grid-template-columns:1fr}
+.ws-entry{position:relative;display:flex;flex-direction:column;gap:.6rem;min-width:0}
+.ws-entry--card{padding:1.1rem;border-radius:var(--ws-radius);background:var(--ws-surface)}
+.ws-entry--card .wsb-content-cover:first-child{margin:-1.1rem -1.1rem .2rem}.ws-entry--card .wsb-content-cover:first-child>div{border-radius:var(--ws-radius) var(--ws-radius) 0 0!important;overflow:hidden}
+.ws-entry .ws-fit img,.ws-entry img{width:100%;object-fit:cover}
+.ws-entry__title{margin:0;font-size:1.25rem}.ws-entry__title a{color:inherit;text-decoration:none}
+.ws-entry__title a::after{content:"";position:absolute;inset:0;border-radius:var(--ws-radius)}
+.ws-entry:hover .ws-entry__title a{color:var(--ws-primary)}.ws-entry__title a:focus-visible{outline:none}.ws-entry:has(.ws-entry__title a:focus-visible){outline:2px solid var(--ws-primary);outline-offset:2px}
+.ws-entry .ws-tags a,.ws-entry .ws-field a{position:relative;z-index:1}
+.ws-entry .ws-meta-row,.ws-entry p{margin:0}.ws-excerpt{color:var(--ws-muted)}
+
+.ws-entries__empty{color:var(--ws-muted)}
+.ws-pagination{display:flex;flex-wrap:wrap;justify-content:center;gap:.4rem;margin-top:2rem}
+.ws-pagination a{min-width:2.4rem;padding:.45rem .75rem;border-radius:var(--ws-radius);background:var(--ws-surface);color:inherit;text-align:center;text-decoration:none;font-weight:600}
+.ws-pagination a:hover{color:var(--ws-primary)}.ws-pagination a[aria-current]{background:var(--ws-primary);color:#fff}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}`;
 
 /** Script unique du site public : bascule des menus mobiles. */

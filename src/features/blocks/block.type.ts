@@ -90,8 +90,9 @@ export type BlockDef = {
   /** Enfants imposés : seul ce type peut être ajouté dedans. */
   childType?: string;
   /** Contexte d'apparition dans la palette. */
-  scope?: ("content" | "layout" | "template")[];
+  scope?: EditorScope[];
   hidden?: boolean;
 };
 
-export type EditorScope = "content" | "layout" | "template";
+/** Éditeurs : contenu, layout, mise en page d'un contenu, page de liste d'un type. */
+export type EditorScope = "content" | "layout" | "template" | "archive";

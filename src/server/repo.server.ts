@@ -161,6 +161,7 @@ type TypeRow = {
   prefix: string;
   layout_id: string | null;
   template: string;
+  archive_template: string;
   fields: string;
   has_body: number;
   builtin: number;
@@ -174,6 +175,7 @@ const toType = (r: TypeRow): ContentType => ({
   hasBody: r.has_body !== 0,
   layoutId: r.layout_id,
   template: json<Block[]>(r.template, []),
+  archiveTemplate: json<Block[]>(r.archive_template, []),
   builtin: r.builtin === 1,
   position: r.position,
 });
@@ -195,7 +197,11 @@ export const typeByPrefix = (prefix: string) => {
 };
 
 export function saveType(
-  input: Omit<ContentType, "builtin" | "position" | "fields" | "hasBody"> & {
+  input: Omit<
+    ContentType,
+    "builtin" | "position" | "fields" | "hasBody" | "archiveTemplate"
+  > & {
+    archiveTemplate?: Block[];
     builtin?: boolean;
     position?: number;
     fields?: ContentType["fields"];
@@ -205,10 +211,11 @@ export function saveType(
   const existedType = !!getType(input.id);
   const t = now();
   db().run(
-    `INSERT INTO content_types (id, name, prefix, editor, layout_id, template, fields, has_body, builtin, position, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COUNT(*) FROM content_types)), ?, ?)
+    `INSERT INTO content_types (id, name, prefix, editor, layout_id, template, archive_template, fields, has_body, builtin, position, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COUNT(*) FROM content_types)), ?, ?)
      ON CONFLICT(id) DO UPDATE SET name = excluded.name, prefix = excluded.prefix, editor = excluded.editor,
-     layout_id = excluded.layout_id, template = excluded.template, fields = excluded.fields, has_body = excluded.has_body,
+     layout_id = excluded.layout_id, template = excluded.template, archive_template = excluded.archive_template,
+     fields = excluded.fields, has_body = excluded.has_body,
      updated_at = excluded.updated_at`,
     input.id,
     input.name,
@@ -216,6 +223,7 @@ export function saveType(
     "document",
     input.layoutId,
     JSON.stringify(input.template ?? []),
+    JSON.stringify(input.archiveTemplate ?? []),
     JSON.stringify(input.fields ?? []),
     input.hasBody === false ? 0 : 1,
     input.builtin ? 1 : 0,
@@ -409,6 +417,7 @@ const summary = (r: ContentRow, homeId?: string): ContentSummary => ({
   lang: r.lang ?? "",
   translationOf: r.translation_of ?? null,
   tags: json<Tag[]>(r.tags_json, []),
+  data: json<Record<string, unknown>>(r.data, {}),
   url: pathOf(r, homeId),
 });
 
@@ -439,6 +448,51 @@ export function publishedOfType(
       limit,
     )
     .map((r) => summary(r, homeId));
+}
+
+/** Page d'une liste publiée : contenus d'un type (ou d'un tag), triés et paginés. */
+export function publishedPage(query: {
+  typeId: string;
+  tagId?: string;
+  page: number;
+  perPage: number;
+  order: string;
+  lang?: string;
+}): { items: ContentSummary[]; total: number } {
+  const homeId = getIdentity().homeId;
+  const where = ["c.status = 'published'", "c.lang = ?"];
+  const params: (string | number)[] = [query.lang ?? ""];
+  if (query.typeId) {
+    where.push("c.type_id = ?");
+    params.push(query.typeId);
+  }
+  if (query.tagId) {
+    where.push(
+      "c.id IN (SELECT content_id FROM content_tags WHERE tag_id = ?)",
+    );
+    params.push(query.tagId);
+  }
+  const clause = where.join(" AND ");
+  const order =
+    query.order === "oldest"
+      ? "c.published_at ASC"
+      : query.order === "title"
+        ? "c.title COLLATE NOCASE"
+        : "c.published_at DESC";
+  const total =
+    db().get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM contents c WHERE ${clause}`,
+      ...params,
+    )?.n ?? 0;
+  const items = db()
+    .all<ContentRow>(
+      `${SELECT_CONTENT} WHERE ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
+      ...params,
+      query.perPage,
+      Math.max(0, query.page - 1) * query.perPage,
+    )
+    .map((r) => summary(r, homeId));
+  return { items, total };
 }
 
 export const getContent = (id: string) => {

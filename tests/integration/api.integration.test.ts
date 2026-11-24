@@ -1041,3 +1041,97 @@ describe("révisions", () => {
     expect(invalid.status).toBe(422);
   });
 });
+
+describe("page de liste d'un type", () => {
+  const publish = (title: string, data: Record<string, unknown> = {}) =>
+    call(contents.create, {
+      cookie: session,
+      body: { typeId: "evenements", title, status: "published", data },
+    });
+
+  test("cartes dessinées par le modèle de liste, pagination et 404 au-delà", async () => {
+    await call(types.create, {
+      cookie: session,
+      body: {
+        name: "Événements",
+        prefix: "agenda",
+        layoutId: null,
+        template: [
+          { id: "t", type: "content-title", props: {} },
+          { id: "f", type: "field-text", props: { label: "Lieu" } },
+        ],
+      },
+    });
+    // Sans modèle de liste : liste par défaut, ouverte dans l'éditeur.
+    const fresh = await call(types.get, {
+      cookie: session,
+      params: { id: "evenements" },
+    });
+    expect(
+      fresh.data.type.archiveTemplate[0].children.map(
+        (b: { type: string }) => b.type,
+      ),
+    ).toEqual(["archive-title", "archive-list"]);
+    await call(types.update, {
+      method: "PATCH",
+      cookie: session,
+      params: { id: "evenements" },
+      body: {
+        archiveTemplate: [
+          { id: "h", type: "archive-title", props: {} },
+          {
+            id: "l",
+            type: "archive-list",
+            props: { perPage: 2, order: "title", pagination: "numbers" },
+            children: [
+              { id: "c1", type: "content-title", props: {} },
+              { id: "c2", type: "content-field", props: { field: "lieu" } },
+            ],
+          },
+        ],
+      },
+    });
+    await publish("Concert", { lieu: "Salle des fêtes" });
+    await publish("Atelier", { lieu: "Médiathèque" });
+    await publish("Bal");
+    const first = (await page("/agenda")).html;
+    expect(first).toMatch(/<h1[^>]*>Événements<\/h1>/);
+    // Ordre alphabétique, 2 par page : Atelier, Bal.
+    expect(first).toContain('<a href="/agenda/atelier">Atelier</a>');
+    expect(first).toContain('<a href="/agenda/bal">Bal</a>');
+    expect(first).not.toContain("Concert");
+    expect(first).toContain("Médiathèque");
+    expect(first).toContain('href="/agenda/page/2"');
+    const second = await page("/agenda/page/2");
+    expect(second.status).toBe(200);
+    expect(second.html).toContain("Concert");
+    expect(second.html).toContain("Salle des fêtes");
+    expect(second.html).toContain("<title>Événements | page 2");
+    expect(second.html).toContain('aria-current="page">2</a>');
+    expect((await page("/agenda/page/3")).status).toBe(404);
+  });
+
+  test("la liste par défaut des articles et l'aperçu de l'éditeur", async () => {
+    const blog = (await page("/blog")).html;
+    expect(blog).toContain(
+      '<a href="/blog/premier-article">Premier article</a>',
+    );
+    const res = await call(preview, {
+      cookie: session,
+      body: {
+        kind: "archive",
+        typeId: "article",
+        blocks: [
+          {
+            id: "l",
+            type: "archive-list",
+            props: {},
+            children: [{ id: "c", type: "content-title", props: {} }],
+          },
+        ],
+      },
+    });
+    expect(res.data).toContain('data-ws-block="l"');
+    expect(res.data).toContain("Premier article");
+  });
+});
