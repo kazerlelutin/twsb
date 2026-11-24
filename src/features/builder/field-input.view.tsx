@@ -36,6 +36,8 @@ type Props = {
   value: unknown;
   onChange: (value: unknown) => void;
   ctx: FieldContext;
+  /** Indication affichée quand le champ est vide (ex. espacement du thème). */
+  placeholder?: unknown;
 };
 
 const asString = (v: unknown) =>
@@ -46,8 +48,16 @@ const asNumber = (v: unknown) =>
 function SpacingInput(props: {
   label: string;
   value: Spacing | undefined;
+  /** Valeur effective (thème compris), affichée quand le champ est vide. */
+  placeholder?: Spacing;
   onChange: (v: Spacing | undefined) => void;
 }) {
+  const commit = (key: keyof Spacing, raw: string) => {
+    const next = { ...(props.value ?? {}) } as Spacing;
+    if (raw === "") delete next[key];
+    else next[key] = Number(raw);
+    props.onChange(Object.keys(next).length ? next : undefined);
+  };
   const sides = [
     ["top", "Haut"],
     ["right", "Droite"],
@@ -71,13 +81,29 @@ function SpacingInput(props: {
                 max="400"
                 step="4"
                 value={props.value?.[key] ?? ""}
-                onChange={(e) => {
-                  const raw = e.currentTarget.value;
-                  const next = { ...(props.value ?? {}) } as Spacing;
-                  if (raw === "") delete next[key];
-                  else next[key] = Number(raw);
-                  props.onChange(Object.keys(next).length ? next : undefined);
+                placeholder={
+                  props.placeholder?.[key] !== undefined
+                    ? String(props.placeholder[key])
+                    : undefined
+                }
+                onKeyDown={(e) => {
+                  // Champ vide : les flèches partent de la valeur effective, pas de 0.
+                  const base = props.placeholder?.[key];
+                  if (
+                    e.currentTarget.value !== "" ||
+                    base === undefined ||
+                    (e.key !== "ArrowUp" && e.key !== "ArrowDown")
+                  )
+                    return;
+                  e.preventDefault();
+                  const n = Math.max(
+                    0,
+                    Number(base) + (e.key === "ArrowUp" ? 4 : -4),
+                  );
+                  e.currentTarget.value = String(n);
+                  commit(key, String(n));
                 }}
+                onChange={(e) => commit(key, e.currentTarget.value)}
               />
               {label}
             </label>
@@ -321,6 +347,7 @@ export function FieldInput(props: Props) {
         <SpacingInput
           label={f().label}
           value={props.value as Spacing | undefined}
+          placeholder={props.placeholder as Spacing | undefined}
           onChange={(v) => props.onChange(v)}
         />
       </Match>

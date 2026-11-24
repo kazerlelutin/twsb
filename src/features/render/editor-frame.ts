@@ -95,8 +95,8 @@ export function editorFrame() {
       | DOMRect
       | { left: number; top: number; width: number; height: number },
   ) => {
-    node.style.left = `${rect.left + win.scrollX}px`;
-    node.style.top = `${rect.top + win.scrollY}px`;
+    node.style.left = `${rect.left}px`;
+    node.style.top = `${rect.top}px`;
     node.style.width = `${rect.width}px`;
     node.style.height = `${rect.height}px`;
   };
@@ -106,6 +106,29 @@ export function editorFrame() {
     if (typeOf(el) === "columns") return el;
     if (typeOf(el) === "column") return blockOf(el.parentElement);
     return null;
+  }
+
+  /* Espacements réels (thème compris) : affichés en indication dans le panneau. */
+  let lastMetrics = "";
+  function sendMetrics(el: HTMLElement | null) {
+    let data: Record<string, unknown> = { id: selected };
+    if (el) {
+      const cs = getComputedStyle(styled(el));
+      const box = (prop: "padding" | "margin") =>
+        Object.fromEntries(
+          (["top", "right", "bottom", "left"] as const).map((side) => [
+            side,
+            Math.round(
+              Number.parseFloat(cs.getPropertyValue(`${prop}-${side}`)) || 0,
+            ),
+          ]),
+        );
+      data = { ...data, padding: box("padding"), margin: box("margin") };
+    }
+    const key = JSON.stringify(data);
+    if (key === lastMetrics) return;
+    lastMetrics = key;
+    post({ type: "metrics", ...data });
   }
 
   function layout() {
@@ -119,18 +142,19 @@ export function editorFrame() {
     handleS.hidden =
       hide || !(HEIGHT_STYLE.has(typeOf(el)) || HEIGHT_PROP[typeOf(el)]);
     gutters.innerHTML = "";
+    sendMetrics(el);
     if (!el) return;
     el.setAttribute("data-ws-selected", "");
     const r = el.getBoundingClientRect();
     (toolbar.querySelector(".wse-name") as HTMLElement).textContent =
       NAMES[typeOf(el)] ?? typeOf(el);
     grip.hidden = typeOf(el) === "column";
-    toolbar.style.left = `${Math.max(0, r.left + win.scrollX)}px`;
-    toolbar.style.top = `${Math.max(0, r.top + win.scrollY - 30)}px`;
-    handleE.style.left = `${r.right + win.scrollX - 5}px`;
-    handleE.style.top = `${r.top + win.scrollY + r.height / 2 - 14}px`;
-    handleS.style.left = `${r.left + win.scrollX + r.width / 2 - 14}px`;
-    handleS.style.top = `${r.bottom + win.scrollY - 5}px`;
+    toolbar.style.left = `${Math.max(0, r.left)}px`;
+    toolbar.style.top = `${Math.max(0, r.top - 30)}px`;
+    handleE.style.left = `${r.right - 5}px`;
+    handleE.style.top = `${r.top + r.height / 2 - 14}px`;
+    handleS.style.left = `${r.left + r.width / 2 - 14}px`;
+    handleS.style.top = `${r.bottom - 5}px`;
     const cols = columnsOf(el);
     const grid = cols?.querySelector(
       ":scope>.ws-columns",
@@ -225,8 +249,8 @@ export function editorFrame() {
     }
     const r = sel.getRangeAt(0).getBoundingClientRect();
     bubble.hidden = false;
-    bubble.style.left = `${Math.max(4, r.left + win.scrollX + r.width / 2 - bubble.offsetWidth / 2)}px`;
-    bubble.style.top = `${Math.max(4, r.top + win.scrollY - bubble.offsetHeight - 8)}px`;
+    bubble.style.left = `${Math.max(4, r.left + r.width / 2 - bubble.offsetWidth / 2)}px`;
+    bubble.style.top = `${Math.max(4, r.top - bubble.offsetHeight - 8)}px`;
   }
 
   bubble.addEventListener("click", (e) => {
@@ -655,7 +679,7 @@ export function editorFrame() {
     if (!d || d.source !== "ws-editor") return;
     if (d.type === "select") select(d.id ?? null, false, !!d.scroll);
   });
-  win.addEventListener("scroll", () => !resizing && layout(), {
+  win.addEventListener("scroll", () => layout(), {
     passive: true,
   });
   win.addEventListener("resize", () => layout());
@@ -675,7 +699,9 @@ export const EDITOR_FRAME_CSS = `
 .ws-placeholder{padding:2rem;border:2px dashed rgb(56 168 237/.5);border-radius:8px;text-align:center;color:#51637a;font:600 .9rem system-ui}
 .ws-field-slot{display:flex;align-items:baseline;gap:.6rem;padding:.75rem 1rem;border:2px dashed rgb(56 168 237/.55);border-radius:6px;background:rgb(56 168 237/.06);font:500 .95rem system-ui}.ws-field-slot span{color:#51637a;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
 .ws-dropzone{min-height:3rem;border:1px dashed rgb(81 99 122/.35);border-radius:6px}
-.wse{font:600 12px/1 system-ui,sans-serif;color:#101c2c}
+/* Couche fixe et rognée : les cadres ne débordent jamais du document (sinon barres de défilement et tremblements). */
+.wse{position:fixed;inset:0;z-index:2147483000;overflow:hidden;pointer-events:none;font:600 12px/1 system-ui,sans-serif;color:#101c2c}
+.wse-toolbar,.wse-handle,.wse-gutter,.wse-bubble{pointer-events:auto}
 .wse [hidden]{display:none!important}
 .wse-toolbar{position:absolute;z-index:2147483000;display:flex;align-items:center;gap:1px;height:28px;padding:2px;border-radius:5px 5px 0 0;background:#38a8ed;color:#fff;box-shadow:0 4px 12px rgb(0 0 0/.2)}
 .wse-toolbar button,.wse-grip{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:24px;height:24px;padding:0 6px;border:0;border-radius:3px;background:none;color:inherit;font:inherit;cursor:pointer}

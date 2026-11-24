@@ -17,6 +17,7 @@ import type {
   Device,
   EditorScope,
   FieldDef,
+  Spacing,
 } from "../blocks/block.type";
 import {
   blockDef,
@@ -118,6 +119,16 @@ export function Builder(props: Props) {
   const [zone, setZone] = createSignal(props.zones[0].key);
   const [selected, setSelected] = createSignal<string>();
   const [device, setDevice] = createSignal<Device>("desktop");
+  /** Espacements calculés dans l'aperçu pour le bloc sélectionné. */
+  const [metrics, setMetrics] = createSignal<
+    { id: string; padding?: Spacing; margin?: Spacing } | undefined
+  >();
+  const metricFor = (id: string, key: string) => {
+    const m = metrics();
+    return m?.id === id && (key === "padding" || key === "margin")
+      ? m[key]
+      : undefined;
+  };
   const [tab, setTab] = createSignal<"content" | "style">("content");
   const [html, setHtml] = createSignal("");
   let frame: HTMLIFrameElement | undefined;
@@ -411,6 +422,13 @@ export function Builder(props: Props) {
         case "prop":
           if (d.id && d.path) setProp(String(d.id), String(d.path), d.value);
           break;
+        case "metrics":
+          setMetrics(
+            d.id
+              ? { id: String(d.id), padding: d.padding, margin: d.margin }
+              : undefined,
+          );
+          break;
         case "style":
           if (d.id) setStyles(String(d.id), d.values ?? {});
           break;
@@ -509,7 +527,6 @@ export function Builder(props: Props) {
       <div class="ui-builder__body">
         <aside class="ui-builder__side" aria-label="Blocs">
           <div class="ui-builder__section">
-            <h2>Ajouter</h2>
             <For each={groups()}>
               {([category, defs]) => (
                 <div class="ui-palette-group">
@@ -687,6 +704,7 @@ export function Builder(props: Props) {
                             <FieldInput
                               field={field}
                               ctx={fieldCtx()}
+                              placeholder={metricFor(id, field.key)}
                               value={style()[field.key]}
                               onChange={(v) =>
                                 setStyles(id, { [field.key]: v })
