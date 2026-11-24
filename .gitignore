@@ -1,0 +1,11 @@
+node_modules
+.output
+.vinxi
+.nitro
+data/
+.env
+.features-gen
+test-results
+playwright-report
+coverage
+.e2e-data

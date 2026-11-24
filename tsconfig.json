@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsxImportSource": "solid-js",
+    "jsx": "preserve",
+    "types": ["node", "vite/client", "@solidjs/start/env", "@testing-library/jest-dom"],
+    "skipLibCheck": true,
+    "paths": { "~/*": ["./src/*"] }
+  },
+  "exclude": ["node_modules", ".output", "data", ".features-gen"]
+}

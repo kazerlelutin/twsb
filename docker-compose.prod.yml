@@ -1,0 +1,17 @@
+# Exemple d'exécution de l'image de production hors CapRover.
+services:
+  app:
+    build:
+      context: .
+      target: production
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  data:

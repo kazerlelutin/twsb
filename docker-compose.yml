@@ -1,0 +1,32 @@
+# Environnement de développement complet : application, SMTP de test (Mailpit).
+services:
+  app:
+    build:
+      context: .
+      target: development
+    command: ["sh", "-c", "bun install --frozen-lockfile && exec bun run dev"]
+    ports:
+      - "3000:3000"
+    environment:
+      DATA_DIR: /data
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changez-moi-svp}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_FROM: twsb@localhost
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - data:/data
+    depends_on:
+      - mailpit
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+
+volumes:
+  node_modules:
+  data:
