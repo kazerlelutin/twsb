@@ -45,16 +45,20 @@ When("je me connecte avec un mauvais mot de passe", async ({ page }) =>
 );
 
 Given("je suis connecté en administrateur", async ({ page }) => {
-  // Sur un serveur de dev neuf, Vite peut recharger la page pendant la
-  // première connexion (optimisation des dépendances) : on retente une fois.
+  // Sur un serveur de dev neuf, Vite peut recharger la page pendant le premier
+  // chargement (optimisation des dépendances) : on retente une fois.
   for (let attempt = 0; ; attempt++) {
-    await page.goto("/admin/login");
-    await page.getByLabel("E-mail").fill(ADMIN.email);
-    await page.getByLabel("Mot de passe").fill(ADMIN.password);
-    await page.getByRole("button", { name: "Se connecter" }).click();
-    const heading = page.getByRole("heading", { name: "Contenus" });
+    const timeout = attempt ? 20_000 : 10_000;
     try {
-      await expect(heading).toBeVisible({ timeout: attempt ? 10000 : 5000 });
+      await page.goto("/admin/login");
+      await page.getByLabel("E-mail").fill(ADMIN.email, { timeout });
+      await page.getByLabel("Mot de passe").fill(ADMIN.password, { timeout });
+      await page
+        .getByRole("button", { name: "Se connecter" })
+        .click({ timeout });
+      await expect(page.getByRole("heading", { name: "Contenus" })).toBeVisible(
+        { timeout },
+      );
       return;
     } catch (error) {
       if (attempt) throw error;

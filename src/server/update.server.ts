@@ -91,7 +91,9 @@ const CHECK_EVERY = 6 * 3600_000;
 
 /** Dernière version publiée (mise en cache six heures). */
 export async function checkLatest(force = false) {
-  if (!force && latest && Date.now() - latest.at < CHECK_EVERY) return latest;
+  // Un échec (GitHub injoignable) n'est retenu que quelques minutes.
+  const ttl = latest?.error ? 5 * 60_000 : CHECK_EVERY;
+  if (!force && latest && Date.now() - latest.at < ttl) return latest;
   try {
     const res = await fetch(`${apiBase()}/repos/${repo()}/releases/latest`, {
       headers: headers(),

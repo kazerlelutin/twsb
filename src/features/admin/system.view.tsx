@@ -1,4 +1,11 @@
-import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  createResource,
+  createSignal,
+  For,
+  type JSX,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { Button } from "../ui/button.view";
 import { confirmDialog } from "../ui/dialog.view";
 import { TextField, Toggle } from "../ui/field.view";
@@ -90,6 +97,72 @@ async function waitForRestart(from: string) {
     await new Promise((r) => setTimeout(r, 1500));
   }
   return false;
+}
+
+/** Mise en forme d'un texte : **gras**, `code`, [lien](url) et adresses nues. */
+function inline(text: string): JSX.Element[] {
+  const out: JSX.Element[] = [];
+  const pattern =
+    /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s)]+)/g;
+  let last = 0;
+  for (const m of text.matchAll(pattern)) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1]) out.push(<strong>{m[1]}</strong>);
+    else if (m[2]) out.push(<code>{m[2]}</code>);
+    else {
+      const href = m[4] ?? m[5];
+      const label =
+        m[3] ?? href.replace(/^https?:\/\/(www\.)?github\.com\//, "");
+      out.push(
+        <a href={href} target="_blank" rel="noopener">
+          {label}
+        </a>,
+      );
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+/** Notes de version (Markdown simple de GitHub), sans HTML injecté. */
+function ReleaseNotes(props: { text: string }) {
+  const blocks = () => {
+    const result: { kind: "h" | "p" | "ul"; lines: string[] }[] = [];
+    for (const raw of props.text.replace(/\r/g, "").split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      const item = line.match(/^[-*]\s+(.*)$/);
+      const heading = line.match(/^#{1,6}\s+(.*)$/);
+      const previous = result.at(-1);
+      if (item) {
+        if (previous?.kind === "ul") previous.lines.push(item[1]);
+        else result.push({ kind: "ul", lines: [item[1]] });
+      } else if (heading) {
+        // « Nouveautés » répète le titre du bloc.
+        if (!/^nouveaut[ée]s$/i.test(heading[1].trim()))
+          result.push({ kind: "h", lines: [heading[1]] });
+      } else result.push({ kind: "p", lines: [line] });
+    }
+    return result;
+  };
+  return (
+    <div class="ui-notes">
+      <For each={blocks()}>
+        {(b) =>
+          b.kind === "ul" ? (
+            <ul>
+              <For each={b.lines}>{(l) => <li>{inline(l)}</li>}</For>
+            </ul>
+          ) : b.kind === "h" ? (
+            <p class="ui-notes__title">{inline(b.lines[0])}</p>
+          ) : (
+            <p>{inline(b.lines[0])}</p>
+          )
+        }
+      </For>
+    </div>
+  );
 }
 
 export function SystemView() {
@@ -212,77 +285,93 @@ export function SystemView() {
           <div class="ui-data">
             <div class="ui-data__row">
               <Panel title="Version">
-                <dl class="ui-stats">
-                  <div>
-                    <dt>En service</dt>
-                    <dd>{s().version}</dd>
-                  </div>
-                  <div>
-                    <dt>Dernière publiée</dt>
-                    <dd>{s().latest?.version ?? "—"}</dd>
-                  </div>
-                </dl>
-                <Show when={s().checkError}>
-                  <Notice tone="warning">{s().checkError}</Notice>
-                </Show>
-                <Show when={!s().launcher}>
-                  <Notice tone="warning">
-                    Lancement sans le lanceur : mise à jour et retour arrière
-                    automatiques indisponibles.
-                  </Notice>
-                </Show>
-                <For each={s().failed.slice(-1)}>
-                  {(f) => (
-                    <Notice tone="danger">
-                      Échec de la version {f.version} ({f.reason}) le{" "}
-                      {formatDateTime(f.at)} : base restaurée.
+                <div class="ui-system">
+                  <dl class="ui-stats ui-stats--two">
+                    <div>
+                      <dt>En service</dt>
+                      <dd>{s().version}</dd>
+                    </div>
+                    <div>
+                      <dt>Dernière publiée</dt>
+                      <dd>{s().latest?.version ?? "—"}</dd>
+                    </div>
+                  </dl>
+                  <Show when={s().checkError}>
+                    <Notice tone="warning">{s().checkError}</Notice>
+                  </Show>
+                  <Show when={!s().launcher}>
+                    <Notice tone="warning">
+                      Lancement sans le lanceur : mise à jour et retour arrière
+                      automatiques indisponibles.
                     </Notice>
-                  )}
-                </For>
-                <Show when={STEPS[s().progress.step]}>
-                  <Notice tone="info">{STEPS[s().progress.step]}</Notice>
-                </Show>
-                <Show
-                  when={
-                    s().progress.step === "error" ||
-                    s().progress.step === "manual"
-                  }
-                >
-                  <Notice
-                    tone={s().progress.step === "error" ? "danger" : "warning"}
+                  </Show>
+                  <For each={s().failed.slice(-1)}>
+                    {(f) => (
+                      <Notice tone="danger">
+                        Échec de la version {f.version} ({f.reason}) le{" "}
+                        {formatDateTime(f.at)} : base restaurée.
+                      </Notice>
+                    )}
+                  </For>
+                  <Show when={STEPS[s().progress.step]}>
+                    <Notice tone="info">{STEPS[s().progress.step]}</Notice>
+                  </Show>
+                  <Show
+                    when={
+                      s().progress.step === "error" ||
+                      s().progress.step === "manual"
+                    }
                   >
-                    {s().progress.message}
-                  </Notice>
-                </Show>
-                <div class="ui-toolbar">
-                  <Button
-                    variant="ghost"
-                    icon="undo"
-                    disabled={checking() || !!busy()}
-                    onClick={check}
-                  >
-                    Vérifier
-                  </Button>
-                  <Show when={s().updateAvailable}>
-                    <Button
-                      variant="solid"
-                      icon="download"
-                      disabled={!!busy() || !s().latest?.asset}
-                      onClick={update}
+                    <Notice
+                      tone={
+                        s().progress.step === "error" ? "danger" : "warning"
+                      }
                     >
-                      Mettre à jour en {s().latest?.version}
+                      {s().progress.message}
+                    </Notice>
+                  </Show>
+                  <Show when={s().updateAvailable && s().latest}>
+                    {(latest) => (
+                      <details class="ui-release-notes" open>
+                        <summary>Nouveautés de {latest().version}</summary>
+                        <ReleaseNotes text={latest().notes} />
+                        <Show when={latest().url}>
+                          <a
+                            class="ui-table__link"
+                            href={latest().url}
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            Voir la version sur GitHub
+                          </a>
+                        </Show>
+                      </details>
+                    )}
+                  </Show>
+                  <div class="ui-toolbar">
+                    <Button
+                      variant="ghost"
+                      icon="undo"
+                      disabled={checking() || !!busy()}
+                      onClick={check}
+                    >
+                      Vérifier
                     </Button>
-                  </Show>
-                  <Show when={!s().updateAvailable && s().latest}>
-                    <Badge tone="success">À jour</Badge>
-                  </Show>
+                    <Show when={s().updateAvailable}>
+                      <Button
+                        variant="solid"
+                        icon="download"
+                        disabled={!!busy() || !s().latest?.asset}
+                        onClick={update}
+                      >
+                        Mettre à jour en {s().latest?.version}
+                      </Button>
+                    </Show>
+                    <Show when={!s().updateAvailable && s().latest}>
+                      <Badge tone="success">À jour</Badge>
+                    </Show>
+                  </div>
                 </div>
-                <Show when={s().updateAvailable && s().latest?.notes}>
-                  <details class="ui-release-notes" open>
-                    <summary>Nouveautés de {s().latest?.version}</summary>
-                    <pre>{s().latest?.notes}</pre>
-                  </details>
-                </Show>
               </Panel>
               <Panel
                 title="Sauvegardes"
@@ -423,11 +512,6 @@ function ConfigPanel(props: {
               patch({ port: Number(e.currentTarget.value) || 587 })
             }
           />
-          <Toggle
-            label="TLS direct (port 465)"
-            checked={smtp().secure}
-            onChange={(secure) => patch({ secure })}
-          />
           <TextField
             label="Utilisateur"
             autocomplete="off"
@@ -447,6 +531,11 @@ function ConfigPanel(props: {
             placeholder="Mon site <no-reply@mon-site.fr>"
             value={smtp().from}
             onInput={(e) => patch({ from: e.currentTarget.value })}
+          />
+          <Toggle
+            label="TLS direct (port 465)"
+            checked={smtp().secure}
+            onChange={(secure) => patch({ secure })}
           />
         </fieldset>
         <div class="ui-toolbar">
