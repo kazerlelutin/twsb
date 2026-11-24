@@ -45,3 +45,7 @@ Fonctionnalité: Extensions, modales et éditeur enrichi
     Et je choisis la police "Lora" pour les titres
     Et j'enregistre
     Alors la page publique "/" affiche "/fonts/lora.woff2"
+
+  Scénario: La page Menus ouvre le premier menu
+    Quand j'ouvre "/admin/menus"
+    Alors le menu "Principal" est ouvert

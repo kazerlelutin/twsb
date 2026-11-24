@@ -1,4 +1,11 @@
-import { createResource, createSignal, For, Index, Show } from "solid-js";
+import {
+  createEffect,
+  createResource,
+  createSignal,
+  For,
+  Index,
+  Show,
+} from "solid-js";
 import { blockId } from "../blocks/catalog";
 import type { ContentSummary, Menu, MenuItem } from "../site/site.type";
 import { Button } from "../ui/button.view";
@@ -56,6 +63,12 @@ export function MenusView() {
     setRows(flatten(menu.items));
   };
   const current = () => menus()?.find((m) => m.id === currentId());
+
+  // Premier menu ouvert d'office (au chargement et après une suppression).
+  createEffect(() => {
+    const list = menus();
+    if (list?.length && !current()) open(list[0]);
+  });
 
   const create = async () => {
     const label = await promptDialog({

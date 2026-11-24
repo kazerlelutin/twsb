@@ -737,3 +737,7 @@ Then(
     await expect(page.locator(".wsb-image img")).toHaveAttribute("alt", alt);
   },
 );
+
+Then("le menu {string} est ouvert", async ({ page }, name: string) => {
+  await expect(page.getByLabel("Nom", { exact: true })).toHaveValue(name);
+});
