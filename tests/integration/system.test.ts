@@ -195,6 +195,10 @@ describe("mises à jour", () => {
     expect(res.data.progress.message).toContain("Empreinte");
     expect(fs.existsSync(path.join(dataDir, "releases", "9.0.1"))).toBe(false);
     expect(readState(dataDir).pending).toBeUndefined();
+    // La sauvegarde de la tentative échouée n'est pas gardée.
+    expect(
+      (await call(system.status, { cookie: session })).data.backups,
+    ).toEqual([]);
   });
 
   test("le retour arrière exige le lanceur ; les sauvegardes se créent et se suppriment", async () => {

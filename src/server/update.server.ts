@@ -240,9 +240,10 @@ export async function runUpdate(release: ReleaseInfo) {
   const step = (s: UpdateStep, message?: string) => {
     progress = { step: s, version: release.version, message };
   };
+  let backup: string | undefined;
   try {
     step("backup");
-    const backup = createBackup(`Avant la mise à jour en ${release.version}`);
+    backup = createBackup(`Avant la mise à jour en ${release.version}`);
     step("download");
     fs.rmSync(work, { recursive: true, force: true });
     fs.mkdirSync(work, { recursive: true });
@@ -295,6 +296,11 @@ export async function runUpdate(release: ReleaseInfo) {
       );
   } catch (error) {
     fs.rmSync(work, { recursive: true, force: true });
+    // Rien n'a changé : la sauvegarde prise pour cette tentative est inutile.
+    if (backup) {
+      fs.rmSync(backup, { force: true });
+      fs.rmSync(backup.replace(/\.sqlite$/, ".json"), { force: true });
+    }
     step(
       "error",
       error instanceof UpdateError ? error.message : "Mise à jour impossible.",

@@ -165,6 +165,30 @@ function ReleaseNotes(props: { text: string }) {
   );
 }
 
+/** État en un coup d'œil, dans l'en-tête du panneau Version. */
+function VersionChip(props: { status: Status }) {
+  const s = () => props.status;
+  const step = () => s().progress.step;
+  return (
+    <Show
+      when={!STEPS[step()]}
+      fallback={<Badge tone="accent">Mise à jour en cours</Badge>}
+    >
+      <Show
+        when={!s().updateAvailable}
+        fallback={<Badge tone="accent">{s().latest?.version} disponible</Badge>}
+      >
+        <Show
+          when={s().latest}
+          fallback={<Badge tone="warning">Vérification impossible</Badge>}
+        >
+          <Badge tone="success">À jour</Badge>
+        </Show>
+      </Show>
+    </Show>
+  );
+}
+
 export function SystemView() {
   const [checking, setChecking] = createSignal(false);
   const [status, { mutate, refetch }] = createResource(() =>
@@ -284,7 +308,7 @@ export function SystemView() {
         {(s) => (
           <div class="ui-data">
             <div class="ui-data__row">
-              <Panel title="Version">
+              <Panel title="Version" action={<VersionChip status={s()} />}>
                 <div class="ui-system">
                   <dl class="ui-stats ui-stats--two">
                     <div>
@@ -366,9 +390,6 @@ export function SystemView() {
                       >
                         Mettre à jour en {s().latest?.version}
                       </Button>
-                    </Show>
-                    <Show when={!s().updateAvailable && s().latest}>
-                      <Badge tone="success">À jour</Badge>
                     </Show>
                   </div>
                 </div>
