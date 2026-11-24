@@ -78,142 +78,202 @@ function GalleryThumb(props: { id: string }) {
 const str = (v: unknown) =>
   typeof v === "string" ? v : v === undefined || v === null ? "" : String(v);
 
+/** Saisie d'un champ, adaptée à son type. */
+export function FieldEditor(props: {
+  field: ContentField;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const f = props.field;
+  const label = f.required ? `${f.label} *` : f.label;
+  const value = () => props.value;
+  const set = (_key: string, next: unknown) => props.onChange(next);
+  return (
+    <Switch
+      fallback={
+        <TextField
+          placeholder="Vide"
+          label={label}
+          value={str(value())}
+          onInput={(e) => set(f.key, e.currentTarget.value)}
+        />
+      }
+    >
+      <Match when={f.type === "textarea"}>
+        <div class="ui-field ui-field--block">
+          <span class="ui-field__label">{label}</span>
+          <NotionEditor
+            variant="plain"
+            label={f.label}
+            value={str(value())}
+            onChange={(html) => set(f.key, html)}
+          />
+        </div>
+      </Match>
+      <Match when={f.type === "richtext"}>
+        <div class="ui-field ui-field--block">
+          <span class="ui-field__label">{label}</span>
+          <NotionEditor
+            variant="field"
+            label={f.label}
+            value={str(value())}
+            onChange={(html) => set(f.key, html)}
+          />
+        </div>
+      </Match>
+      <Match when={f.type === "number"}>
+        <TextField
+          placeholder="Vide"
+          label={label}
+          type="number"
+          value={str(value())}
+          onInput={(e) =>
+            set(
+              f.key,
+              e.currentTarget.value === ""
+                ? null
+                : Number(e.currentTarget.value),
+            )
+          }
+        />
+      </Match>
+      <Match when={f.type === "date"}>
+        <TextField
+          placeholder="Vide"
+          label={label}
+          type="date"
+          value={str(value())}
+          onInput={(e) => set(f.key, e.currentTarget.value)}
+        />
+      </Match>
+      <Match when={f.type === "toggle"}>
+        <Toggle
+          label={label}
+          checked={value() === true}
+          onChange={(v) => set(f.key, v)}
+        />
+      </Match>
+      <Match when={f.type === "select"}>
+        <SelectField
+          label={label}
+          empty="Choisir"
+          value={str(value())}
+          options={(f.options ?? []).map((o) => ({
+            value: o,
+            label: o,
+          }))}
+          onChange={(e) => set(f.key, e.currentTarget.value)}
+        />
+      </Match>
+      <Match when={f.type === "media"}>
+        <MediaField
+          label={label}
+          value={str(value())}
+          onChange={(id) => set(f.key, id)}
+        />
+      </Match>
+      <Match when={f.type === "gallery"}>
+        <GalleryField
+          label={label}
+          value={Array.isArray(value()) ? (value() as string[]) : []}
+          onChange={(ids) => set(f.key, ids)}
+        />
+      </Match>
+      <Match when={f.type === "url"}>
+        <TextField
+          label={label}
+          type="text"
+          inputMode="url"
+          placeholder="/page ou https://"
+          value={str(value())}
+          onInput={(e) => set(f.key, e.currentTarget.value)}
+        />
+      </Match>
+      <Match when={f.type === "email"}>
+        <TextField
+          placeholder="Vide"
+          label={label}
+          type="email"
+          value={str(value())}
+          onInput={(e) => set(f.key, e.currentTarget.value)}
+        />
+      </Match>
+      <Match when={f.type === "color"}>
+        <ColorField
+          label={label}
+          value={str(value())}
+          onChange={(v) => set(f.key, v)}
+        />
+      </Match>
+    </Switch>
+  );
+}
+
 /** Formulaire des champs d'un contenu, avec la saisie adaptée à chaque type. */
 export function FieldsForm(props: {
   fields: ContentField[];
   data: Record<string, unknown>;
   onChange: (data: Record<string, unknown>) => void;
 }) {
-  const set = (key: string, value: unknown) =>
-    props.onChange({ ...props.data, [key]: value });
   return (
     <div class="ui-fields-form">
       <For each={props.fields}>
-        {(f) => {
-          const label = f.required ? `${f.label} *` : f.label;
-          const value = () => props.data[f.key];
-          return (
-            <Switch
-              fallback={
-                <TextField
-                  placeholder="Vide"
-                  label={label}
-                  value={str(value())}
-                  onInput={(e) => set(f.key, e.currentTarget.value)}
-                />
-              }
-            >
-              <Match when={f.type === "textarea"}>
-                <div class="ui-field ui-field--block">
-                  <span class="ui-field__label">{label}</span>
-                  <NotionEditor
-                    variant="plain"
-                    label={f.label}
-                    value={str(value())}
-                    onChange={(html) => set(f.key, html)}
-                  />
-                </div>
-              </Match>
-              <Match when={f.type === "richtext"}>
-                <div class="ui-field ui-field--block">
-                  <span class="ui-field__label">{label}</span>
-                  <NotionEditor
-                    variant="field"
-                    label={f.label}
-                    value={str(value())}
-                    onChange={(html) => set(f.key, html)}
-                  />
-                </div>
-              </Match>
-              <Match when={f.type === "number"}>
-                <TextField
-                  placeholder="Vide"
-                  label={label}
-                  type="number"
-                  value={str(value())}
-                  onInput={(e) =>
-                    set(
-                      f.key,
-                      e.currentTarget.value === ""
-                        ? null
-                        : Number(e.currentTarget.value),
-                    )
-                  }
-                />
-              </Match>
-              <Match when={f.type === "date"}>
-                <TextField
-                  placeholder="Vide"
-                  label={label}
-                  type="date"
-                  value={str(value())}
-                  onInput={(e) => set(f.key, e.currentTarget.value)}
-                />
-              </Match>
-              <Match when={f.type === "toggle"}>
-                <Toggle
-                  label={label}
-                  checked={value() === true}
-                  onChange={(v) => set(f.key, v)}
-                />
-              </Match>
-              <Match when={f.type === "select"}>
-                <SelectField
-                  label={label}
-                  empty="Choisir"
-                  value={str(value())}
-                  options={(f.options ?? []).map((o) => ({
-                    value: o,
-                    label: o,
-                  }))}
-                  onChange={(e) => set(f.key, e.currentTarget.value)}
-                />
-              </Match>
-              <Match when={f.type === "media"}>
-                <MediaField
-                  label={label}
-                  value={str(value())}
-                  onChange={(id) => set(f.key, id)}
-                />
-              </Match>
-              <Match when={f.type === "gallery"}>
-                <GalleryField
-                  label={label}
-                  value={Array.isArray(value()) ? (value() as string[]) : []}
-                  onChange={(ids) => set(f.key, ids)}
-                />
-              </Match>
-              <Match when={f.type === "url"}>
-                <TextField
-                  label={label}
-                  type="text"
-                  inputMode="url"
-                  placeholder="/page ou https://"
-                  value={str(value())}
-                  onInput={(e) => set(f.key, e.currentTarget.value)}
-                />
-              </Match>
-              <Match when={f.type === "email"}>
-                <TextField
-                  placeholder="Vide"
-                  label={label}
-                  type="email"
-                  value={str(value())}
-                  onInput={(e) => set(f.key, e.currentTarget.value)}
-                />
-              </Match>
-              <Match when={f.type === "color"}>
-                <ColorField
-                  label={label}
-                  value={str(value())}
-                  onChange={(v) => set(f.key, v)}
-                />
-              </Match>
-            </Switch>
-          );
-        }}
+        {(f) => (
+          <FieldEditor
+            field={f}
+            value={props.data[f.key]}
+            onChange={(value) =>
+              props.onChange({ ...props.data, [f.key]: value })
+            }
+          />
+        )}
       </For>
     </div>
+  );
+}
+
+/** Valeur considérée comme remplie (pour signaler les champs vides). */
+export const isFilled = (value: unknown) =>
+  Array.isArray(value)
+    ? value.length > 0
+    : value !== undefined && value !== null && value !== "" && value !== false;
+
+/** Sélecteur du champ à saisir dans la page : le corps, puis chaque champ du type. */
+export function FieldPicker(props: {
+  items: { key: string; label: string; kind: string; filled: boolean }[];
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  const name = createUniqueId();
+  return (
+    <fieldset class="ui-picker">
+      <legend class="ui-field__label">Champs</legend>
+      <For each={props.items}>
+        {(item) => (
+          <label
+            class="ui-picker__item"
+            classList={{ "ui-picker__item--on": props.value === item.key }}
+          >
+            <input
+              type="radio"
+              class="ui-sr"
+              name={name}
+              value={item.key}
+              checked={props.value === item.key}
+              onChange={() => props.onChange(item.key)}
+            />
+            <span class="ui-picker__label">{item.label}</span>
+            <span class="ui-picker__kind">{item.kind}</span>
+            <span
+              class="ui-picker__dot"
+              classList={{ "ui-picker__dot--on": item.filled }}
+              role="img"
+              aria-label={item.filled ? "Rempli" : "Vide"}
+            />
+          </label>
+        )}
+      </For>
+    </fieldset>
   );
 }
 

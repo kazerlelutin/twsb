@@ -1,4 +1,5 @@
 import { createResource, createSignal, For, Show } from "solid-js";
+import type { RevisionSummary } from "~/server/revisions.server";
 import {
   type ContentSummary,
   FONT_STACKS,
@@ -18,6 +19,12 @@ import { Badge, Notice, PageHead, Panel } from "../ui/layout.view";
 import { Modal } from "../ui/modal.view";
 import { Table } from "../ui/table.view";
 import { api, formatDate, type User } from "./client";
+import {
+  ENTITY_LABELS,
+  formatDateTime,
+  HistoryButton,
+  restore,
+} from "./history.view";
 import { MediaField } from "./media-library.view";
 import { session } from "./session";
 import { notify, notifyError } from "./toast";
@@ -134,7 +141,7 @@ export function IdentityView() {
   );
   const [pages] = createResource(() =>
     api<{ items: ContentSummary[] }>(
-      "/api/contents?type=page&status=published&limit=200",
+      "/api/contents?status=published&limit=200",
     ).then((r) => r.items),
   );
   const change = (patch: Partial<Identity>) => {
@@ -154,16 +161,19 @@ export function IdentityView() {
     }
   };
   return (
-    <Show when={identity()}>
+    <Show when={!identity.error && identity()}>
       {(id) => (
         <>
           <style>{fontFaces()}</style>
           <PageHead
             title="Identité"
             actions={
-              <Button variant="solid" icon="save" onClick={save}>
-                Enregistrer
-              </Button>
+              <>
+                <HistoryButton entity="identity" id="identity" />
+                <Button variant="solid" icon="save" onClick={save}>
+                  Enregistrer
+                </Button>
+              </>
             }
           />
           <div
@@ -503,6 +513,161 @@ export function UsersView() {
 
 /* Données : export et import */
 
+type DataStats = {
+  database: number;
+  media: number;
+  mediaFiles: number;
+  mediaItems: number;
+  revisions: number;
+  revisionsBytes: number;
+  oldestRevision: number | null;
+};
+
+/** Taille lisible : o, Ko, Mo, Go. */
+export const formatBytes = (bytes: number) => {
+  const units = ["o", "Ko", "Mo", "Go"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toLocaleString("fr-FR", { maximumFractionDigits: unit ? 1 : 0 })} ${units[unit]}`;
+};
+
+/** Occupation du stockage et nettoyage des révisions anciennes. */
+function StoragePanel() {
+  const [stats, { mutate }] = createResource(() =>
+    api<{ stats: DataStats }>("/api/stats").then((r) => r.stats),
+  );
+  const [days, setDays] = createSignal(30);
+  const purge = async (e: SubmitEvent) => {
+    e.preventDefault();
+    if (
+      !(await confirmDialog({
+        title: `Supprimer les révisions de plus de ${days()} jours ?`,
+        message:
+          "Les éléments supprimés concernés ne pourront plus être restaurés.",
+        confirmLabel: "Nettoyer",
+        danger: true,
+      }))
+    )
+      return;
+    try {
+      const res = await api<{ deleted: number; stats: DataStats }>(
+        `/api/revisions?days=${days()}`,
+        { method: "DELETE" },
+      );
+      mutate(res.stats);
+      notify(
+        res.deleted
+          ? `${res.deleted} révision${res.deleted > 1 ? "s" : ""} supprimée${res.deleted > 1 ? "s" : ""}`
+          : "Aucune révision aussi ancienne",
+      );
+    } catch (err) {
+      notifyError(err);
+    }
+  };
+  return (
+    <Panel title="Stockage">
+      <Show when={stats()}>
+        {(s) => (
+          <>
+            <dl class="ui-stats">
+              <div>
+                <dt>Total</dt>
+                <dd>{formatBytes(s().database + s().media)}</dd>
+              </div>
+              <div>
+                <dt>Base</dt>
+                <dd>{formatBytes(s().database)}</dd>
+              </div>
+              <div>
+                <dt>Médias</dt>
+                <dd>
+                  {formatBytes(s().media)}
+                  <span class="ui-muted">
+                    {s().mediaItems} média{s().mediaItems > 1 ? "s" : ""} |{" "}
+                    {s().mediaFiles} fichiers
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Révisions</dt>
+                <Show when={s().revisions} fallback={<dd>Aucune</dd>}>
+                  <dd>
+                    {formatBytes(s().revisionsBytes)}
+                    <span class="ui-muted">
+                      {s().revisions} depuis le {formatDate(s().oldestRevision)}
+                    </span>
+                  </dd>
+                </Show>
+              </div>
+            </dl>
+            <form class="ui-inline-form" onSubmit={purge}>
+              <TextField
+                label="Révisions de plus de (jours)"
+                type="number"
+                min={1}
+                max={3650}
+                value={days()}
+                onInput={(e) => setDays(Number(e.currentTarget.value) || 30)}
+              />
+              <Button variant="danger" type="submit" icon="trash">
+                Nettoyer
+              </Button>
+            </form>
+          </>
+        )}
+      </Show>
+    </Panel>
+  );
+}
+
+/** Éléments supprimés : restaurables depuis leur dernière révision. */
+function DeletedPanel() {
+  const [items, { refetch }] = createResource(() =>
+    api<{ items: RevisionSummary[] }>("/api/revisions/deleted").then(
+      (r) => r.items,
+    ),
+  );
+  return (
+    <Panel title="Éléments supprimés">
+      <Show when={items()?.length} fallback={<p class="ui-muted">Aucun</p>}>
+        <ol class="ui-history">
+          <For each={items()}>
+            {(r) => (
+              <li class="ui-history__item">
+                <div class="ui-history__main">
+                  <span class="ui-history__label">{r.label || r.entityId}</span>
+                  <span class="ui-muted">
+                    {formatDateTime(r.createdAt)}
+                    {r.userName ? ` | ${r.userName}` : ""}
+                  </span>
+                </div>
+                <Badge>{ENTITY_LABELS[r.entity]}</Badge>
+                <Show when={r.entity !== "media"}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="undo"
+                    aria-label={`Restaurer ${r.label}`}
+                    onClick={async () => {
+                      if (await restore(r)) refetch();
+                    }}
+                  >
+                    Restaurer
+                  </Button>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ol>
+      </Show>
+    </Panel>
+  );
+}
+
 export function BackupView() {
   const [busy, setBusy] = createSignal(false);
   const importZip = async (e: SubmitEvent) => {
@@ -530,43 +695,49 @@ export function BackupView() {
   return (
     <>
       <PageHead title="Données" />
-      <div class="ui-grid">
-        <Panel title="Exporter">
-          <p class="ui-muted" style={{ margin: "0 0 1rem" }}>
-            site.sqlite | media/ | static/
-          </p>
-          <LinkButton
-            variant="solid"
-            icon="download"
-            href="/api/export"
-            download=""
-          >
-            Télécharger l'archive
-          </LinkButton>
-        </Panel>
-        <Panel title="Importer">
-          <form onSubmit={importZip}>
-            <TextField
-              label="Archive .zip"
-              name="file"
-              type="file"
-              accept=".zip,application/zip"
-              required
-            />
-            <Notice tone="warning">
-              Remplace contenus, médias et comptes.
-            </Notice>
-            <Button
-              variant="danger"
-              type="submit"
-              icon="upload"
-              disabled={busy()}
-              style={{ "margin-top": "1rem" }}
+      <div class="ui-data">
+        <div class="ui-data__row">
+          <StoragePanel />
+          <DeletedPanel />
+        </div>
+        <div class="ui-data__row">
+          <Panel title="Exporter">
+            <p class="ui-muted" style={{ margin: "0 0 1rem" }}>
+              site.sqlite | media/ | static/
+            </p>
+            <LinkButton
+              variant="solid"
+              icon="download"
+              href="/api/export"
+              download=""
             >
-              Importer
-            </Button>
-          </form>
-        </Panel>
+              Télécharger l'archive
+            </LinkButton>
+          </Panel>
+          <Panel title="Importer">
+            <form onSubmit={importZip}>
+              <TextField
+                label="Archive .zip"
+                name="file"
+                type="file"
+                accept=".zip,application/zip"
+                required
+              />
+              <Notice tone="warning">
+                Remplace contenus, médias et comptes.
+              </Notice>
+              <Button
+                variant="danger"
+                type="submit"
+                icon="upload"
+                disabled={busy()}
+                style={{ "margin-top": "1rem" }}
+              >
+                Importer
+              </Button>
+            </form>
+          </Panel>
+        </div>
       </div>
     </>
   );

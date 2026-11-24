@@ -1,4 +1,5 @@
 import { type output, ZodError, type ZodTypeAny } from "zod";
+import { setActor, withActor } from "./actor.server";
 import "./seed.server";
 import { ensureAdmin } from "./seed.server";
 import { type Role, type User, userBySession } from "./users.server";
@@ -75,6 +76,7 @@ export async function requireUser(request: Request, role?: Role) {
   if (!user) throw new HttpError(401, "Connexion requise.");
   if (role === "admin" && user.role !== "admin")
     throw new HttpError(403, "Réservé aux administrateurs.");
+  setActor({ userId: user.id });
   return user;
 }
 
@@ -96,29 +98,30 @@ type Handler = (event: ApiEvent) => Promise<Response> | Response;
 /** Uniformise les erreurs des routes d'API. */
 export const api =
   (fn: Handler): Handler =>
-  async (event) => {
-    try {
-      return await fn(event);
-    } catch (error) {
-      if (error instanceof HttpError)
-        return json({ error: error.message }, error.status);
-      if (error instanceof ZodError) {
-        return json(
-          {
-            error: "Données invalides.",
-            issues: error.issues.map((i) => ({
-              path: i.path.join("."),
-              message: i.message,
-            })),
-          },
-          422,
-        );
+  (event) =>
+    withActor(async () => {
+      try {
+        return await fn(event);
+      } catch (error) {
+        if (error instanceof HttpError)
+          return json({ error: error.message }, error.status);
+        if (error instanceof ZodError) {
+          return json(
+            {
+              error: "Données invalides.",
+              issues: error.issues.map((i) => ({
+                path: i.path.join("."),
+                message: i.message,
+              })),
+            },
+            422,
+          );
+        }
+        if (error instanceof Error && /UNIQUE constraint/.test(error.message))
+          return json({ error: "Cette valeur existe déjà." }, 409);
+        console.error(error);
+        return json({ error: "Erreur serveur." }, 500);
       }
-      if (error instanceof Error && /UNIQUE constraint/.test(error.message))
-        return json({ error: "Cette valeur existe déjà." }, 409);
-      console.error(error);
-      return json({ error: "Erreur serveur." }, 500);
-    }
-  };
+    });
 
 export const query = (request: Request) => new URL(request.url).searchParams;

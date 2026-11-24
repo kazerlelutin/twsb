@@ -57,6 +57,12 @@ export function NotionEditor(props: {
   const [slash, setSlash] = createSignal<SlashState | null>(null);
   const [picker, setPicker] = createSignal<Range | null>(null);
   const [linking, setLinking] = createSignal(false);
+  const [imageAlt, setImageAlt] = createSignal("");
+  /** Texte alternatif de l'image sélectionnée : propre à cette insertion. */
+  const setAlt = (alt: string) => {
+    setImageAlt(alt);
+    editor()?.commands.updateAttributes("image", { alt: alt.trim() });
+  };
 
   /** Lien collé seul : vidéo YouTube intégrée, sinon carte d'aperçu complétée par le serveur. */
   const embedUrl = async (url: string) => {
@@ -292,8 +298,8 @@ export function NotionEditor(props: {
             ]),
         BubbleMenu.configure({
           element: bubble,
-          shouldShow: ({ editor: e, from, to }) =>
-            from !== to && !e.isActive("image"),
+          // Texte sélectionné : mise en forme ; image sélectionnée : son texte alternatif.
+          shouldShow: ({ from, to }) => from !== to,
         }),
       ],
       editorProps: {
@@ -340,15 +346,19 @@ export function NotionEditor(props: {
         },
       },
       onUpdate: ({ editor: e }) => props.onChange(e.isEmpty ? "" : e.getHTML()),
-      onTransaction: ({ editor: e }) =>
+      onTransaction: ({ editor: e }) => {
+        const image = e.isActive("image");
+        if (image) setImageAlt(String(e.getAttributes("image").alt ?? ""));
         setActive({
+          image,
           bold: e.isActive("bold"),
           italic: e.isActive("italic"),
           strike: e.isActive("strike"),
           code: e.isActive("code"),
           link: e.isActive("link"),
           h2: e.isActive("heading", { level: 2 }),
-        }),
+        });
+      },
     });
     setEditor(instance);
   });
@@ -450,53 +460,76 @@ export function NotionEditor(props: {
         role="toolbar"
         aria-label="Mise en forme"
       >
-        <For each={marks()}>
-          {(m) => (
-            <button
-              type="button"
-              aria-label={m.name}
-              title={m.name}
-              aria-pressed={!!active()[m.key]}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor() && m.run(editor() as Editor)}
-            >
-              {m.label}
-            </button>
-          )}
-        </For>
-        <button
-          type="button"
-          aria-label="Lien"
-          title="Lien"
-          aria-pressed={!!active().link}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={link}
+        <Show
+          when={!active().image}
+          fallback={
+            <label class="ui-bubble__alt">
+              <span>Alt</span>
+              <input
+                aria-label="Texte alternatif de l'image"
+                placeholder="Décrire l'image"
+                maxlength={300}
+                value={imageAlt()}
+                onInput={(e) => setAlt(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") {
+                    e.preventDefault();
+                    editor()?.commands.focus();
+                  }
+                }}
+              />
+            </label>
+          }
         >
-          ⛓
-        </button>
-        <form
-          class="ui-bubble__link"
-          hidden={!linking()}
-          onSubmit={(e) => {
-            e.preventDefault();
-            applyLink(linkInput?.value ?? "");
-          }}
-        >
-          <input
-            ref={linkInput}
-            aria-label="Adresse du lien"
-            placeholder="https://… puis Entrée"
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                applyLink(null);
-              }
+          <For each={marks()}>
+            {(m) => (
+              <button
+                type="button"
+                aria-label={m.name}
+                title={m.name}
+                aria-pressed={!!active()[m.key]}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor() && m.run(editor() as Editor)}
+              >
+                {m.label}
+              </button>
+            )}
+          </For>
+          <button
+            type="button"
+            aria-label="Lien"
+            title="Lien"
+            aria-pressed={!!active().link}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={link}
+          >
+            ⛓
+          </button>
+          <form
+            class="ui-bubble__link"
+            hidden={!linking()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              applyLink(linkInput?.value ?? "");
             }}
-            onBlur={(e) => {
-              if (!bubble.contains(e.relatedTarget as Node)) setLinking(false);
-            }}
-          />
-        </form>
+          >
+            <input
+              ref={linkInput}
+              aria-label="Adresse du lien"
+              placeholder="https://… puis Entrée"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  applyLink(null);
+                }
+              }}
+              onBlur={(e) => {
+                if (!bubble.contains(e.relatedTarget as Node))
+                  setLinking(false);
+              }}
+            />
+          </form>
+        </Show>
       </div>
       <div ref={host} />
       <Show when={slash()}>

@@ -3,29 +3,35 @@ import {
   createResource,
   createSignal,
   type JSX,
-  Match,
   onCleanup,
   onMount,
   Show,
-  Switch,
 } from "solid-js";
-import { Builder } from "../builder/builder.view";
 import { NotionEditor } from "../editor/notion-editor.view";
 import { slugify } from "../render/html";
-import type {
-  Content,
-  ContentType,
-  Identity,
-  Language,
-  Tag,
-  Translation,
+import {
+  CONTENT_FIELD_TYPES,
+  type Content,
+  type ContentType,
+  type Identity,
+  type Language,
+  type Tag,
+  type Translation,
 } from "../site/site.type";
 import { Button, LinkButton } from "../ui/button.view";
 import { confirmDialog } from "../ui/dialog.view";
 import { TextArea } from "../ui/field.view";
 import { Badge, Notice, Panel } from "../ui/layout.view";
 import { api } from "./client";
-import { FieldsForm, Permalink, TagInput } from "./content-fields.view";
+import {
+  FieldEditor,
+  FieldPicker,
+  FieldsForm,
+  isFilled,
+  Permalink,
+  TagInput,
+} from "./content-fields.view";
+import { HistoryButton } from "./history.view";
 import { fetchMedia, MediaField, Thumb } from "./media-library.view";
 import { fetchPlugins } from "./plugins.view";
 import { notify, notifyError } from "./toast";
@@ -151,9 +157,14 @@ function Settings(props: {
   );
 }
 
+const BODY = "__body";
+const FIELD_KIND_LABELS = Object.fromEntries(
+  CONTENT_FIELD_TYPES.map((t) => [t.value, t.label]),
+);
+
 export function ContentEditorView() {
   const params = useParams();
-  const [data, { mutate }] = createResource(
+  const [data, { mutate, refetch }] = createResource(
     () => params.id,
     async (id) => {
       const [
@@ -195,6 +206,35 @@ export function ContentEditorView() {
     },
   );
   const [dirty, setDirty] = createSignal(false);
+  // Champ saisi dans la page : choisi dans la colonne (le corps par défaut).
+  const [picked, setActive] = createSignal<string>();
+  const pickerItems = (d: Loaded) => [
+    ...(d.type.hasBody
+      ? [
+          {
+            key: BODY,
+            label: "Corps",
+            kind: "Texte riche",
+            filled: !!d.content.body,
+          },
+        ]
+      : []),
+    ...d.type.fields.map((f) => ({
+      key: f.key,
+      label: f.required ? `${f.label} *` : f.label,
+      kind: FIELD_KIND_LABELS[f.type] ?? f.type,
+      filled: isFilled(d.content.data[f.key]),
+    })),
+  ];
+  const active = (d: Loaded) => {
+    const items = pickerItems(d);
+    const key = picked();
+    return items.some((i) => i.key === key)
+      ? (key as string)
+      : (items[0]?.key ?? "");
+  };
+  const activeField = (d: Loaded) =>
+    d.type.fields.find((f) => f.key === active(d));
   const [saving, setSaving] = createSignal(false);
 
   const change = (patch: Partial<Draft>) => {
@@ -316,6 +356,14 @@ export function ContentEditorView() {
           title="Modifications non enregistrées"
         />
       </Show>
+      <HistoryButton
+        entity="content"
+        id={d.content.id}
+        onRestored={() => {
+          setDirty(false);
+          refetch();
+        }}
+      />
       <Badge tone={d.content.status === "published" ? "success" : "neutral"}>
         {d.content.status === "published" ? "Publié" : "Brouillon"}
       </Badge>
@@ -365,7 +413,8 @@ export function ContentEditorView() {
 
   return (
     <Show
-      when={data()}
+      // Lire une ressource en erreur la relance : on teste l'erreur d'abord.
+      when={!data.error && data()}
       fallback={
         <Show when={data.error}>
           <Notice tone="danger">Contenu introuvable.</Notice>
@@ -373,130 +422,101 @@ export function ContentEditorView() {
       }
     >
       {(d) => (
-        <Switch>
-          <Match when={d().type.editor === "builder"}>
-            <Builder
-              scope="content"
-              zones={[{ key: "main", label: "Page" }]}
-              value={{ main: d().content.blocks }}
-              onChange={(v) => change({ blocks: v.main })}
-              preview={(v) => ({
-                kind: "content",
-                typeId: d().type.id,
-                contentId: d().content.id,
-                title: d().content.title,
-                blocks: v.main,
-              })}
-              bar={
-                <>
-                  <LinkButton
-                    variant="quiet"
-                    icon="back"
-                    href="/admin"
-                    aria-label="Contenus"
+        <>
+          <header class="ui-page-head">
+            <div class="ui-toolbar">
+              <LinkButton variant="quiet" icon="back" href="/admin">
+                Contenus
+              </LinkButton>
+              <span class="ui-muted">{d().type.name}</span>
+            </div>
+            <div class="ui-toolbar">{actions(d())}</div>
+          </header>
+          <div class="ui-doc">
+            <article class="ui-doc__paper">
+              <Show when={d().content.coverId}>
+                {(id) => (
+                  <div class="ui-doc__cover">
+                    <CoverImage id={id()} />
+                  </div>
+                )}
+              </Show>
+              <div class="ui-doc__title">
+                <textarea
+                  class="ui-input ui-input--title"
+                  aria-label="Titre"
+                  rows={1}
+                  placeholder="Sans titre"
+                  value={d().content.title}
+                  style={{ resize: "none", "field-sizing": "content" }}
+                  onInput={(e) => change({ title: e.currentTarget.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      (
+                        document.querySelector(
+                          ".ui-doc .ProseMirror",
+                        ) as HTMLElement | null
+                      )?.focus();
+                    }
+                  }}
+                />
+              </div>
+              <Permalink
+                prefix={d().type.prefix}
+                slug={d().content.slug}
+                title={d().content.title}
+                isHome={d().homeId === d().content.id}
+                onChange={(slug) => change({ slug })}
+              />
+              <div class="ui-doc__field">
+                <Show
+                  when={activeField(d())}
+                  keyed
+                  fallback={
+                    <Show when={active(d()) === BODY}>
+                      <NotionEditor
+                        label="Corps"
+                        value={d().content.body}
+                        onChange={(html) => change({ body: html })}
+                      />
+                    </Show>
+                  }
+                >
+                  {(field) => (
+                    <FieldEditor
+                      field={field}
+                      value={d().content.data[field.key]}
+                      onChange={(value) =>
+                        change({
+                          data: { ...d().content.data, [field.key]: value },
+                        })
+                      }
+                    />
+                  )}
+                </Show>
+              </div>
+            </article>
+            <aside class="ui-doc__side">
+              <Panel>
+                <Show when={pickerItems(d()).length > 1}>
+                  <FieldPicker
+                    items={pickerItems(d())}
+                    value={active(d())}
+                    onChange={setActive}
                   />
-                  <input
-                    class="ui-input ui-input--title"
-                    aria-label="Titre"
-                    value={d().content.title}
-                    onInput={(e) => change({ title: e.currentTarget.value })}
-                  />
-                </>
-              }
-              actions={actions(d())}
-              settingsTitle={d().type.name}
-              settings={
+                </Show>
                 <Settings
                   content={d().content}
                   url={d().url}
                   type={d().type}
                   suggestions={d().tags}
-                  isHome={d().homeId === d().content.id}
-                  withPermalink
-                  withFields
                   onChange={change}
                 />
-              }
-            />
-          </Match>
-          <Match when={d().type.editor === "document"}>
-            <header class="ui-page-head">
-              <div class="ui-toolbar">
-                <LinkButton variant="quiet" icon="back" href="/admin">
-                  Contenus
-                </LinkButton>
-                <span class="ui-muted">{d().type.name}</span>
-              </div>
-              <div class="ui-toolbar">{actions(d())}</div>
-            </header>
-            <div class="ui-doc">
-              <article class="ui-doc__paper">
-                <Show when={d().content.coverId}>
-                  {(id) => (
-                    <div class="ui-doc__cover">
-                      <CoverImage id={id()} />
-                    </div>
-                  )}
-                </Show>
-                <div class="ui-doc__title">
-                  <textarea
-                    class="ui-input ui-input--title"
-                    aria-label="Titre"
-                    rows={1}
-                    placeholder="Sans titre"
-                    value={d().content.title}
-                    style={{ resize: "none", "field-sizing": "content" }}
-                    onInput={(e) => change({ title: e.currentTarget.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        (
-                          document.querySelector(
-                            ".ui-doc .ProseMirror",
-                          ) as HTMLElement | null
-                        )?.focus();
-                      }
-                    }}
-                  />
-                </div>
-                <Permalink
-                  prefix={d().type.prefix}
-                  slug={d().content.slug}
-                  title={d().content.title}
-                  isHome={d().homeId === d().content.id}
-                  onChange={(slug) => change({ slug })}
-                />
-                <Show when={d().type.fields.length}>
-                  <div class="ui-doc__fields">
-                    <FieldsForm
-                      fields={d().type.fields}
-                      data={d().content.data}
-                      onChange={(value) => change({ data: value })}
-                    />
-                  </div>
-                </Show>
-                <Show when={d().type.hasBody}>
-                  <NotionEditor
-                    label="Corps"
-                    value={d().content.body}
-                    onChange={(html) => change({ body: html })}
-                  />
-                </Show>
-              </article>
-              <aside class="ui-doc__side">
-                <Panel title="Réglages">
-                  <Settings
-                    content={d().content}
-                    url={d().url}
-                    type={d().type}
-                    suggestions={d().tags}
-                    onChange={change}
-                  />
-                </Panel>
-              </aside>
-            </div>
-          </Match>
-        </Switch>
+              </Panel>
+            </aside>
+          </div>
+        </>
       )}
     </Show>
   );

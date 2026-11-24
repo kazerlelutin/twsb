@@ -6,6 +6,7 @@ import { confirmDialog } from "../ui/dialog.view";
 import { PageHead } from "../ui/layout.view";
 import { Table } from "../ui/table.view";
 import { api } from "./client";
+import { HistoryButton } from "./history.view";
 import { notify, notifyError } from "./toast";
 
 /** Tags : renommer, changer l'adresse publique, supprimer. */
@@ -90,6 +91,12 @@ export function TagsView() {
                   target="_blank"
                   rel="noopener"
                   aria-label={`Voir ${t.name}`}
+                />
+                <HistoryButton
+                  entity="tag"
+                  id={t.id}
+                  size="sm"
+                  onRestored={refetch}
                 />
                 <Button
                   variant="quiet"

@@ -1,10 +1,23 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
+import { testEnv } from "../../env";
 
 const { Given, When, Then } = createBdd();
 
-import { testEnv } from "../../env";
+/** Choisit, dans la colonne du contenu, le champ à saisir dans la page. */
+const pickField = async (
+  page: import("@playwright/test").Page,
+  label: string,
+) => {
+  const picker = page.getByRole("group", { name: "Champs" });
+  if (!(await picker.count())) return;
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await picker.getByText(new RegExp(`^${escaped}( \\*)?$`)).click();
+  await expect(
+    picker.getByRole("radio", { name: new RegExp(`^${escaped}( \\*)? `) }),
+  ).toBeChecked();
+};
 
 const ADMIN = testEnv.admin;
 
@@ -134,11 +147,9 @@ Then("l'aperçu indique {string}", async ({ page }, text: string) => {
 });
 
 Then(
-  "la feuille de style publique masque ce bloc sous 768 pixels",
-  async ({ page }) => {
-    const url = page.url();
-    const id = url.split("/").pop();
-    const res = await page.request.get(`/api/contents/${id}/draft`);
+  "la page publique {string} masque un bloc sous 768 pixels",
+  async ({ page }, path: string) => {
+    const res = await page.request.get(path);
     expect(await res.text()).toMatch(
       /@media \(max-width:768px\)\{\.b-[\w-]+\{display:none\}\}/,
     );
@@ -283,6 +294,8 @@ Then("l'aperçu affiche une image chargée", async ({ page }) => {
     .frameLocator('iframe[title="Aperçu de la page"]')
     .locator(".wsb-image img");
   await expect(img).toBeVisible();
+  // Chargement différé : l'image doit être à l'écran pour se charger.
+  await img.scrollIntoViewIfNeeded();
   await expect.poll(() => img.evaluate(loaded)).toBe(true);
 });
 
@@ -407,7 +420,7 @@ When(
   async ({ page }, kind: string, label: string) => {
     await page
       .getByRole("complementary", { name: "Blocs" })
-      .getByRole("button", { name: kind, exact: true })
+      .getByRole("button", { name: `Champ ${kind.toLowerCase()}`, exact: true })
       .click();
     await settings(page)
       .getByLabel("Nom du champ", { exact: true })
@@ -426,6 +439,7 @@ When("j'enregistre le type", async ({ page }) => {
 When(
   "je remplis le champ {string} avec {string}",
   async ({ page }, label: string, value: string) => {
+    await pickField(page, label);
     await page.getByLabel(label, { exact: true }).fill(value);
   },
 );
@@ -500,6 +514,7 @@ Then("je peux encore cliquer sur {string}", async ({ page }, name: string) => {
 When(
   "dans le champ {string}, j'insère un {string} avec le texte {string}",
   async ({ page }, field: string, item: string, text: string) => {
+    await pickField(page, field);
     const editor = page.getByRole("textbox", { name: field, exact: true });
     await editor.click();
     await page.keyboard.type("/");
@@ -616,5 +631,109 @@ When(
       .getByRole("group", { name: "Titres" })
       .getByText(font, { exact: true })
       .click();
+  },
+);
+
+/* Révisions */
+const confirmRestore = async (page: import("@playwright/test").Page) => {
+  const confirm = page.getByRole("dialog", { name: /^Restaurer/ });
+  await confirm.getByRole("button", { name: "Restaurer", exact: true }).click();
+  await expect(confirm).toBeHidden();
+};
+
+When(
+  "je restaure la version précédente depuis l'historique",
+  async ({ page }) => {
+    await page.getByRole("button", { name: "Historique" }).click();
+    const history = page.getByRole("dialog", { name: "Historique" });
+    await history
+      .getByRole("button", { name: /^Restaurer la version/ })
+      .first()
+      .click();
+    await confirmRestore(page);
+    await expect(history).toBeHidden();
+  },
+);
+
+Then("le titre du document est {string}", async ({ page }, title: string) => {
+  await expect(
+    page.getByRole("textbox", { name: "Titre", exact: true }),
+  ).toHaveValue(title);
+});
+
+When(
+  "je restaure {string} depuis les éléments supprimés",
+  async ({ page }, title: string) => {
+    await page.goto("/admin/data");
+    await page
+      .getByRole("region", { name: "Éléments supprimés" })
+      .getByRole("button", { name: `Restaurer ${title}` })
+      .click();
+    await confirmRestore(page);
+  },
+);
+
+Then(
+  "{string} est de nouveau dans la liste",
+  async ({ page }, title: string) => {
+    await page.goto("/admin");
+    await expect(
+      page.getByRole("link", { name: title, exact: true }),
+    ).toBeVisible();
+  },
+);
+
+Then(
+  "je vois la taille de {string} et de {string}",
+  async ({ page }, a: string, b: string) => {
+    const panel = page.getByRole("region", { name: "Stockage" });
+    for (const label of [a, b])
+      await expect(
+        panel
+          .locator("div", { has: page.getByText(label, { exact: true }) })
+          .locator("dd"),
+      ).toHaveText(/\d+(,\d)? (o|Ko|Mo|Go)/);
+  },
+);
+
+/* Texte alternatif */
+const noAltBadge = (page: import("@playwright/test").Page, name: string) =>
+  page
+    .locator(".ui-media", {
+      has: page.getByRole("button", { name, exact: true }),
+    })
+    .getByText("Sans alt", { exact: true });
+
+Then(
+  "la vignette de {string} est marquée sans texte alternatif",
+  async ({ page }, name: string) => {
+    await expect(noAltBadge(page, name)).toBeVisible();
+  },
+);
+
+Then(
+  "la vignette de {string} n'est plus marquée sans texte alternatif",
+  async ({ page }, name: string) => {
+    await expect(noAltBadge(page, name)).toBeHidden();
+  },
+);
+
+When(
+  "je décris l'image {string} avec {string}",
+  async ({ page }, name: string, alt: string) => {
+    await page.getByRole("button", { name, exact: true }).click();
+    const detail = page.getByRole("dialog", { name });
+    await detail.getByLabel("Texte alternatif").fill(alt);
+    await expect(detail.getByText("Enregistré", { exact: true })).toBeVisible();
+    await detail.getByRole("button", { name: "Fermer" }).click();
+    await expect(detail).toBeHidden();
+  },
+);
+
+Then(
+  "l'image de {string} est décrite par {string}",
+  async ({ page }, path: string, alt: string) => {
+    await page.goto(path);
+    await expect(page.locator(".wsb-image img")).toHaveAttribute("alt", alt);
   },
 );

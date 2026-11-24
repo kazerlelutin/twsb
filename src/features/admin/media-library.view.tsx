@@ -32,6 +32,64 @@ export const fetchMedia = (id: string) => {
 
 export const isImage = (media: MediaInfo) => media.mime.startsWith("image/");
 
+/** Enregistre le texte alternatif d'un média et met à jour le cache local. */
+export async function saveAlt(media: MediaInfo, alt: string) {
+  const { item } = await api<{ item: MediaInfo }>(`/api/media/${media.id}`, {
+    method: "PATCH",
+    body: { alt: alt.trim() },
+  });
+  cache.set(item.id, Promise.resolve(item));
+  return item;
+}
+
+/**
+ * Texte alternatif d'une image, enregistré à la saisie (après une courte pause) :
+ * il décrit l'image pour les lecteurs d'écran et les moteurs de recherche.
+ */
+export function AltField(props: {
+  media: MediaInfo;
+  onSaved?: (media: MediaInfo) => void;
+}) {
+  const [state, setState] = createSignal<"idle" | "saving" | "saved">("idle");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const save = async (value: string) => {
+    clearTimeout(timer);
+    if (value.trim() === props.media.alt) return;
+    setState("saving");
+    try {
+      props.onSaved?.(await saveAlt(props.media, value));
+      setState("saved");
+    } catch (e) {
+      notifyError(e);
+      setState("idle");
+    }
+  };
+  return (
+    <TextField
+      label="Texte alternatif"
+      value={props.media.alt}
+      placeholder="Décrire l'image"
+      maxlength={300}
+      hint={
+        state() === "saving"
+          ? "Enregistrement…"
+          : state() === "saved"
+            ? "Enregistré"
+            : props.media.alt
+              ? undefined
+              : "Manquant"
+      }
+      onInput={(e) => {
+        const value = e.currentTarget.value;
+        setState("idle");
+        clearTimeout(timer);
+        timer = setTimeout(() => save(value), 600);
+      }}
+      onChange={(e) => save(e.currentTarget.value)}
+    />
+  );
+}
+
 export function Thumb(props: { media?: MediaInfo }) {
   return (
     <Show when={props.media} fallback={<Icon name="image" />}>
@@ -116,7 +174,8 @@ export function MediaGrid(props: {
               <button
                 type="button"
                 class="ui-media__thumb"
-                aria-label={item.alt || item.name}
+                aria-label={item.name}
+                title={item.alt || item.name}
                 aria-pressed={props.selected === item.id}
                 onClick={() => props.onPick(item)}
               >
@@ -125,6 +184,9 @@ export function MediaGrid(props: {
               <span class="ui-media__name" title={item.name}>
                 {item.name}
               </span>
+              <Show when={isImage(item) && !item.alt}>
+                <span class="ui-media__noalt">Sans alt</span>
+              </Show>
             </li>
           )}
         </For>
@@ -219,6 +281,13 @@ export function MediaField(props: {
           />
         </Show>
       </div>
+      <Show when={props.value ? media() : undefined} keyed>
+        {(m) => (
+          <Show when={isImage(m)}>
+            <AltField media={m} />
+          </Show>
+        )}
+      </Show>
       <MediaPicker
         open={open()}
         onClose={() => setOpen(false)}

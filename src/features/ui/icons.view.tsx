@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 
 const PATHS: Record<string, string> = {
   plus: "M12 5v14M5 12h14",
+  history: "M3 12a9 9 0 1 0 2.6-6.4M3 4v5h5M12 7v5l3 2",
   plugin: "M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4",
   globe:
     "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z",

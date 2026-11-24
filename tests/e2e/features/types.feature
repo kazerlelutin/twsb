@@ -18,7 +18,7 @@ Fonctionnalité: Types de contenu à champs
     Alors le contenu est enregistré avec "Salle des fêtes" pour "lieu"
 
   Scénario: Les champs inutiles sont masqués
-    Quand je crée un contenu de type "Page"
+    Quand je crée le type "Vitrines" avec le préfixe "vitrines"
     Et j'ajoute le bloc "Bannière"
     Alors le champ "Image" n'est pas proposé
     Quand je choisis "Image à droite" pour "Disposition"

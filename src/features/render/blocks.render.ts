@@ -288,14 +288,14 @@ function fieldValue(
         ? `<div class="ws-prose">${str(value)}</div>`
         : `<p>${esc(value).replaceAll("\n", "<br>")}</p>`;
     case "media":
-      return picture(ctx, value, { alt: "" });
+      return picture(ctx, value);
     case "gallery":
       return `<div class="ws-grid ws-gallery" style="--cols:${num(p.columns, 3)};--cols-m:2;--gap:12px">${list(
         value,
       )
         .map(
           (id) =>
-            `<div class="ws-fit" style="aspect-ratio:1/1;overflow:hidden">${picture(ctx, id, { alt: "", sizes: "33vw" })}</div>`,
+            `<div class="ws-fit" style="aspect-ratio:1/1;overflow:hidden">${picture(ctx, id, { sizes: "33vw" })}</div>`,
         )
         .join("")}</div>`;
     case "url": {
@@ -366,7 +366,7 @@ const RENDERERS: Record<string, Renderer> = {
       bool(p.newTab),
     )}</div>`,
   image: (ctx, _b, p) => {
-    const img = picture(ctx, p.media, { alt: str(p.alt) });
+    const img = picture(ctx, p.media, { alt: str(p.alt) || undefined });
     if (!img) return placeholder(ctx, "Image");
     const href = safeUrl(p.url);
     const fit = aspect(p.fit);
@@ -391,7 +391,7 @@ const RENDERERS: Record<string, Renderer> = {
     return `<div class="ws-grid ws-gallery" style="--cols:${cols};--cols-m:2;--gap:${num(p.gap, 12)}px">${items
       .map(
         (i) =>
-          `<div class="ws-fit" style="${fit}">${picture(ctx, i.media, { alt: str(i.alt), sizes: `(max-width: 768px) 50vw, ${Math.round(100 / cols)}vw` })}</div>`,
+          `<div class="ws-fit" style="${fit}">${picture(ctx, i.media, { alt: str(i.alt) || undefined, sizes: `(max-width: 768px) 50vw, ${Math.round(100 / cols)}vw` })}</div>`,
       )
       .join("")}</div>`;
   },
@@ -614,7 +614,6 @@ const RENDERERS: Record<string, Renderer> = {
   "content-cover": (ctx, _b, p) => {
     const img = picture(ctx, ctx.content?.coverId, {
       eager: true,
-      alt: "",
       sizes: "100vw",
     });
     if (!img) return placeholder(ctx, "Image de couverture");

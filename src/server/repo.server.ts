@@ -16,6 +16,7 @@ import {
   type Translation,
 } from "../features/site/site.type";
 import { db, json, now, uid } from "./db.server";
+import { recordRevision } from "./revisions.server";
 
 /* Version du site : toute écriture invalide le cache public. */
 let version = 0;
@@ -44,7 +45,9 @@ export function saveIdentity(identity: Identity) {
     JSON.stringify(identity),
   );
   bumpVersion();
-  return getIdentity();
+  const saved = getIdentity();
+  recordRevision("identity", "identity", "update", saved, saved.name);
+  return saved;
 }
 
 /* Extensions */
@@ -64,7 +67,9 @@ export function savePlugins(plugins: Plugins) {
     JSON.stringify(plugins),
   );
   bumpVersion();
-  return getPlugins();
+  const saved = getPlugins();
+  recordRevision("plugins", "plugins", "update", saved, "Extensions");
+  return saved;
 }
 
 /** Codes des langues secondaires actives (vide si l'extension est coupée). */
@@ -111,6 +116,7 @@ export function saveLayout(
   id = input.id ?? uid(),
 ): Layout {
   const t = now();
+  const existed = !!getLayout(id);
   db().tx(() => {
     if (input.isDefault) db().run("UPDATE layouts SET is_default = 0");
     db().run(
@@ -128,13 +134,22 @@ export function saveLayout(
     );
   });
   bumpVersion();
-  return getLayout(id) as Layout;
+  const saved = getLayout(id) as Layout;
+  recordRevision(
+    "layout",
+    id,
+    existed ? "update" : "create",
+    saved,
+    saved.name,
+  );
+  return saved;
 }
 
 export function deleteLayout(id: string) {
   const layout = getLayout(id);
   if (!layout || layout.isDefault) return false;
   db().run("DELETE FROM layouts WHERE id = ?", id);
+  recordRevision("layout", id, "delete", layout, layout.name);
   bumpVersion();
   return true;
 }
@@ -144,7 +159,6 @@ type TypeRow = {
   id: string;
   name: string;
   prefix: string;
-  editor: "document" | "builder";
   layout_id: string | null;
   template: string;
   fields: string;
@@ -158,7 +172,6 @@ const toType = (r: TypeRow): ContentType => ({
   prefix: r.prefix,
   fields: json(r.fields, []),
   hasBody: r.has_body !== 0,
-  editor: r.editor,
   layoutId: r.layout_id,
   template: json<Block[]>(r.template, []),
   builtin: r.builtin === 1,
@@ -189,6 +202,7 @@ export function saveType(
     hasBody?: boolean;
   },
 ): ContentType {
+  const existedType = !!getType(input.id);
   const t = now();
   db().run(
     `INSERT INTO content_types (id, name, prefix, editor, layout_id, template, fields, has_body, builtin, position, created_at, updated_at)
@@ -199,7 +213,7 @@ export function saveType(
     input.id,
     input.name,
     input.prefix,
-    input.editor,
+    "document",
     input.layoutId,
     JSON.stringify(input.template ?? []),
     JSON.stringify(input.fields ?? []),
@@ -210,13 +224,23 @@ export function saveType(
     t,
   );
   bumpVersion();
-  return getType(input.id) as ContentType;
+  const saved = getType(input.id) as ContentType;
+  recordRevision(
+    "type",
+    saved.id,
+    existedType ? "update" : "create",
+    saved,
+    saved.name,
+  );
+  return saved;
 }
 
 export function deleteType(id: string) {
   const type = getType(id);
-  if (!type || type.builtin) return false;
+  // Page reste toujours disponible : c'est le type de la page d'accueil.
+  if (!type || type.id === "page") return false;
   db().run("DELETE FROM content_types WHERE id = ?", id);
+  recordRevision("type", id, "delete", type, type.name);
   bumpVersion();
   return true;
 }
@@ -508,7 +532,8 @@ export function saveContent(
     existing?.status === "published" ? contentPath(existing.id) : undefined;
   const t = now();
   const merged = { ...existing, ...input } as Content;
-  const nextId = existing?.id ?? uid();
+  // Un identifiant inconnu est conservé : restauration d'un contenu supprimé.
+  const nextId = existing?.id ?? id ?? uid();
   const keptDate =
     existing?.status === "published" ? existing.publishedAt : null;
   const publishedAt =
@@ -553,7 +578,15 @@ export function saveContent(
     );
   }
   bumpVersion();
-  return getContent(nextId) as Content;
+  const saved = getContent(nextId) as Content;
+  recordRevision(
+    "content",
+    nextId,
+    existing ? "update" : "create",
+    saved,
+    saved.title,
+  );
+  return saved;
 }
 
 /* Redirections : une ancienne adresse mène au contenu renommé. */
@@ -610,6 +643,7 @@ export function ensureTags(names: string[]): string[] {
       uniqueTagSlug(name),
       now(),
     );
+    recordRevision("tag", id, "create", getTag(id), name);
     ids.push(id);
   }
   return [...new Set(ids)];
@@ -641,11 +675,53 @@ export function updateTag(id: string, patch: { name?: string; slug?: string }) {
     id,
   );
   bumpVersion();
-  return getTag(id);
+  const saved = getTag(id);
+  if (saved) recordRevision("tag", id, "update", tagSnapshot(id), saved.name);
+  return saved;
+}
+
+/** État d'un tag avec ses contenus : sa restauration les retague. */
+function tagSnapshot(id: string) {
+  const tag = getTag(id);
+  return {
+    ...tag,
+    contentIds: db()
+      .all<{ content_id: string }>(
+        "SELECT content_id FROM content_tags WHERE tag_id = ? ORDER BY content_id",
+        id,
+      )
+      .map((r) => r.content_id),
+  };
+}
+
+/** Recrée un tag supprimé avec son identifiant, et le rattache à ses contenus encore présents. */
+export function restoreTag(snapshot: {
+  id: string;
+  name: string;
+  slug: string;
+  contentIds?: string[];
+}) {
+  if (!getTag(snapshot.id))
+    db().run(
+      "INSERT INTO tags (id, name, slug, created_at) VALUES (?, ?, ?, ?)",
+      snapshot.id,
+      snapshot.name,
+      uniqueTagSlug(snapshot.slug || snapshot.name, snapshot.id),
+      now(),
+    );
+  for (const contentId of snapshot.contentIds ?? [])
+    db().run(
+      "INSERT OR IGNORE INTO content_tags (content_id, tag_id) SELECT id, ? FROM contents WHERE id = ?",
+      snapshot.id,
+      contentId,
+    );
+  return updateTag(snapshot.id, { name: snapshot.name, slug: snapshot.slug });
 }
 
 export function deleteTag(id: string) {
-  db().run("DELETE FROM tags WHERE id = ?", id);
+  const snapshot = tagSnapshot(id);
+  const { changes } = db().run("DELETE FROM tags WHERE id = ?", id);
+  if (changes) recordRevision("tag", id, "delete", snapshot, snapshot.name);
   bumpVersion();
 }
 
@@ -655,7 +731,9 @@ export function deleteContent(id: string) {
     "UPDATE contents SET translation_of = NULL WHERE translation_of = ?",
     id,
   );
+  const current = getContent(id);
   const { changes } = db().run("DELETE FROM contents WHERE id = ?", id);
+  if (current) recordRevision("content", id, "delete", current, current.title);
   bumpVersion();
   return changes > 0;
 }
@@ -675,6 +753,7 @@ export const getMenu = (id: string) => {
 };
 export function saveMenu(input: Menu) {
   const t = now();
+  const existed = !!getMenu(input.id);
   db().run(
     "INSERT INTO menus (id, name, items, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, items = excluded.items, updated_at = excluded.updated_at",
     input.id,
@@ -684,10 +763,20 @@ export function saveMenu(input: Menu) {
     t,
   );
   bumpVersion();
-  return getMenu(input.id) as Menu;
+  const saved = getMenu(input.id) as Menu;
+  recordRevision(
+    "menu",
+    saved.id,
+    existed ? "update" : "create",
+    saved,
+    saved.name,
+  );
+  return saved;
 }
 export function deleteMenu(id: string) {
+  const current = getMenu(id);
   db().run("DELETE FROM menus WHERE id = ?", id);
+  if (current) recordRevision("menu", id, "delete", current, current.name);
   bumpVersion();
 }
 
@@ -770,6 +859,7 @@ export function insertMedia(media: MediaInfo) {
     media.createdAt,
   );
   bumpVersion();
+  recordRevision("media", media.id, "create", media, media.name);
   return media;
 }
 
@@ -786,11 +876,15 @@ export function updateMedia(
     id,
   );
   bumpVersion();
-  return getMedia(id);
+  const saved = getMedia(id);
+  if (saved) recordRevision("media", id, "update", saved, saved.name);
+  return saved;
 }
 
 export function deleteMediaRow(id: string) {
+  const current = getMedia(id);
   db().run("DELETE FROM media WHERE id = ?", id);
+  if (current) recordRevision("media", id, "delete", current, current.name);
   bumpVersion();
 }
 

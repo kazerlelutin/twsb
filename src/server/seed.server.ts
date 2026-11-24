@@ -68,19 +68,18 @@ const articleTemplate = (): Block[] => [
   ]),
 ];
 
-const homeBlocks = (): Block[] => [
+const pageTemplate = (): Block[] => [
   b("section", { width: "container" }, [
-    b("hero", {
-      eyebrow: "Bienvenue",
-      title: "Votre site, simplement",
-      text: "Composez vos pages bloc par bloc, publiez en un clic.",
-      variant: "center",
-      primaryLabel: "Lire le blog",
-      primaryUrl: "/blog",
-      secondaryLabel: "",
-      secondaryUrl: "",
-      media: "",
-    }),
+    b("content-title", { align: "left" }),
+    b("content-body"),
+  ]),
+];
+
+/** Mise en page de l'accueil : le contenu remplit le titre et le texte d'introduction. */
+const homeTemplate = (): Block[] => [
+  b("section", { width: "container" }, [
+    b("content-title", { align: "center" }),
+    b("content-body"),
   ]),
   b(
     "section",
@@ -143,21 +142,27 @@ export function seed(database: Db) {
       id: "page",
       name: "Page",
       prefix: "",
-      editor: "builder",
       layoutId: layout.id,
-      template: [],
+      template: pageTemplate(),
       builtin: true,
       position: 0,
+    });
+    saveType({
+      id: "accueil",
+      name: "Accueil",
+      prefix: "",
+      layoutId: layout.id,
+      template: homeTemplate(),
+      position: 1,
     });
     saveType({
       id: "article",
       name: "Article",
       prefix: "blog",
-      editor: "document",
       layoutId: layout.id,
       template: articleTemplate(),
       builtin: true,
-      position: 1,
+      position: 2,
     });
   }
   if (!getMenu("main")) {
@@ -171,11 +176,11 @@ export function seed(database: Db) {
     });
   }
   const home = saveContent(undefined, {
-    typeId: "page",
-    title: "Accueil",
+    typeId: "accueil",
+    title: "Votre site, simplement",
     slug: "accueil",
     status: "published",
-    blocks: homeBlocks(),
+    body: "<p>Chaque type définit sa mise en page ; chaque contenu remplit ses champs.</p>",
   });
   saveContent(undefined, {
     typeId: "article",

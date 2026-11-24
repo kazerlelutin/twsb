@@ -132,12 +132,6 @@ export const DEFAULT_TEMPLATE = (): Block[] => [
 export const layoutFor = (type: ContentType | undefined): Layout | undefined =>
   (type?.layoutId ? getLayout(type.layoutId) : undefined) ?? defaultLayout();
 
-/** Blocs principaux d'un contenu selon le mode d'édition de son type. */
-export function mainBlocks(type: ContentType, content: Content): Block[] {
-  if (type.editor === "builder") return content.blocks;
-  return type.template.length ? type.template : DEFAULT_TEMPLATE();
-}
-
 export function renderContent(content: Content, options: ContextOptions = {}) {
   const type = getType(content.typeId);
   if (!type) return undefined;
@@ -159,7 +153,8 @@ export function renderContent(content: Content, options: ContextOptions = {}) {
   return renderDocument({
     ctx,
     layout: layoutFor(type),
-    main: mainBlocks(type, content),
+    // Le type est la mise en page : le contenu ne fournit que les valeurs.
+    main: type.template.length ? type.template : DEFAULT_TEMPLATE(),
     // Le titre et la description servent aussi au référencement.
     title: content.id === identity.homeId ? identity.name : content.title,
     description: content.excerpt || content.seoDescription,

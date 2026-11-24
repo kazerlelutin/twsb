@@ -17,6 +17,8 @@ import {
   menus,
   plugins,
   preview,
+  revisions,
+  stats,
   tags,
   types,
   users,
@@ -146,7 +148,7 @@ describe("contenus et site public", () => {
     });
     const published = await page("/a-propos");
     expect(published.status).toBe(200);
-    expect(published.html).toContain("Nouvelle page");
+    expect(published.html).toMatch(/<h1[^>]*>À propos<\/h1>/);
   });
 
   test("filtre par type, statut et recherche", async () => {
@@ -846,5 +848,196 @@ describe("texte riche : vidéos et liens enrichis", () => {
       });
       expect(res.status).toBe(422);
     }
+  });
+});
+
+describe("le type est la mise en page, le contenu remplit les champs", () => {
+  test("le modèle du type affiche les valeurs du contenu", async () => {
+    const created = await call(types.create, {
+      cookie: session,
+      body: {
+        name: "Fiches",
+        prefix: "fiches",
+        layoutId: null,
+        template: [
+          { id: "t", type: "content-title", props: {} },
+          { id: "f", type: "field-number", props: { label: "Prix" } },
+        ],
+      },
+    });
+    const type = created.data.type;
+    expect(type.fields).toEqual([
+      { key: "prix", label: "Prix", type: "number" },
+    ]);
+    expect(type.hasBody).toBe(false);
+    const content = await call(contents.create, {
+      cookie: session,
+      body: {
+        typeId: type.id,
+        title: "Vase",
+        status: "published",
+        data: { prix: "42", inconnu: "ignoré" },
+      },
+    });
+    expect(content.data.content.data).toEqual({ prix: 42 });
+    const html = (await page("/fiches/vase")).html;
+    expect(html).toMatch(/<h1[^>]*>Vase<\/h1>/);
+    expect(html).toContain("42");
+  });
+
+  test("Page ne se supprime pas ; un autre type vide, si", async () => {
+    expect(
+      (await call(types.remove, { cookie: session, params: { id: "page" } }))
+        .status,
+    ).toBe(409);
+    const articles = (
+      await call(contents.list, {
+        cookie: session,
+        path: "/api/contents?type=article",
+      })
+    ).data.items;
+    for (const c of articles)
+      await call(contents.remove, { cookie: session, params: { id: c.id } });
+    const res = await call(types.remove, {
+      cookie: session,
+      params: { id: "article" },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("révisions", () => {
+  const history = async (entity: string, id: string) =>
+    (
+      await call(revisions.list, {
+        cookie: session,
+        path: `/api/revisions?entity=${entity}&id=${id}`,
+      })
+    ).data.items;
+
+  test("chaque action crée une révision, avec son auteur ; une version se restaure", async () => {
+    const created = await call(contents.create, {
+      cookie: session,
+      body: { typeId: "page", title: "Version 1" },
+    });
+    const id = created.data.content.id;
+    const update = (body: unknown) =>
+      call(contents.update, {
+        method: "PATCH",
+        cookie: session,
+        params: { id },
+        body,
+      });
+    await update({ title: "Version 2" });
+    // Un enregistrement sans changement n'ajoute pas de révision.
+    await update({ title: "Version 2" });
+    const items = await history("content", id);
+    expect(items.map((r: { action: string }) => r.action)).toEqual([
+      "update",
+      "create",
+    ]);
+    expect(items[0]).toMatchObject({
+      label: "Version 2",
+      userName: "Administrateur",
+    });
+    const restored = await call(revisions.restore, {
+      cookie: session,
+      params: { id: items[1].id },
+    });
+    expect(restored.status).toBe(200);
+    const got = await call(contents.get, { cookie: session, params: { id } });
+    expect(got.data.content.title).toBe("Version 1");
+    expect((await history("content", id))[0].action).toBe("restore");
+  });
+
+  test("un contenu supprimé se restaure avec son identifiant et ses tags", async () => {
+    const created = await call(contents.create, {
+      cookie: session,
+      body: {
+        typeId: "article",
+        title: "Éphémère",
+        tags: ["Brouillons"],
+        status: "published",
+      },
+    });
+    const id = created.data.content.id;
+    await call(contents.remove, { cookie: session, params: { id } });
+    expect((await page("/blog/ephemere")).status).toBe(404);
+    const deleted = (await call(revisions.deleted, { cookie: session })).data
+      .items;
+    const entry = deleted.find((r: { entityId: string }) => r.entityId === id);
+    expect(entry).toMatchObject({ entity: "content", label: "Éphémère" });
+    await call(revisions.restore, {
+      cookie: session,
+      params: { id: entry.id },
+    });
+    const got = await call(contents.get, { cookie: session, params: { id } });
+    expect(got.data.content.tags.map((t: { name: string }) => t.name)).toEqual([
+      "Brouillons",
+    ]);
+    expect((await page("/blog/ephemere")).status).toBe(200);
+    // Restauré : il ne figure plus parmi les éléments supprimés.
+    const after = (await call(revisions.deleted, { cookie: session })).data
+      .items;
+    expect(after.some((r: { entityId: string }) => r.entityId === id)).toBe(
+      false,
+    );
+  });
+
+  test("un tag supprimé retrouve ses contenus", async () => {
+    const created = await call(contents.create, {
+      cookie: session,
+      body: { typeId: "article", title: "Tarte", tags: ["Desserts"] },
+    });
+    const tag = created.data.content.tags[0];
+    await call(tags.remove, { cookie: session, params: { id: tag.id } });
+    const entry = (
+      await call(revisions.deleted, { cookie: session })
+    ).data.items.find((r: { entityId: string }) => r.entityId === tag.id);
+    await call(revisions.restore, {
+      cookie: session,
+      params: { id: entry.id },
+    });
+    const got = await call(contents.get, {
+      cookie: session,
+      params: { id: created.data.content.id },
+    });
+    expect(got.data.content.tags).toEqual([tag]);
+  });
+
+  test("l'identité, les menus et les layouts ont leur historique", async () => {
+    const before = (await call(identity.get, { cookie: session })).data
+      .identity;
+    await call(identity.update, {
+      method: "PUT",
+      cookie: session,
+      body: { ...before, name: "Nouveau nom" },
+    });
+    const items = await history("identity", "identity");
+    expect(items[0].label).toBe("Nouveau nom");
+    const menu = await call(menus.create, {
+      cookie: session,
+      body: { name: "Pied", items: [] },
+    });
+    expect((await history("menu", menu.data.menu.id))[0].action).toBe("create");
+  });
+
+  test("Données : tailles et nettoyage des vieilles révisions", async () => {
+    const res = await call(stats, { cookie: session });
+    expect(res.data.stats.database).toBeGreaterThan(0);
+    expect(res.data.stats.revisions).toBeGreaterThan(0);
+    const purge = await call(revisions.purge, {
+      method: "DELETE",
+      cookie: session,
+      path: "/api/revisions?days=1",
+    });
+    // Tout date d'aujourd'hui : rien n'est supprimé.
+    expect(purge.data.deleted).toBe(0);
+    const invalid = await call(revisions.purge, {
+      method: "DELETE",
+      cookie: session,
+      path: "/api/revisions?days=0",
+    });
+    expect(invalid.status).toBe(422);
   });
 });

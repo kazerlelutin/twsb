@@ -64,6 +64,42 @@ const context = (over: Partial<RenderContext> = {}): RenderContext => ({
 });
 
 describe("rendu des blocs", () => {
+  test("le texte alternatif du média s'applique, sauf texte propre au bloc", () => {
+    const image = (alt: string) =>
+      renderBlock(context(), {
+        id: "i",
+        type: "image",
+        props: { media: "m1", alt },
+      });
+    expect(image("")).toContain('alt="Une photo"');
+    expect(image("Vue du port")).toContain('alt="Vue du port"');
+    const field = renderBlock(
+      context({
+        content: {
+          title: "T",
+          bodyHtml: "",
+          coverId: "m1",
+          publishedAt: 0,
+          data: { visuel: "m1" },
+          fields: [{ key: "visuel", label: "Visuel", type: "media" }],
+        },
+      }),
+      {
+        id: "f",
+        type: "field-media",
+        props: { key: "visuel", label: "Visuel" },
+      },
+    );
+    expect(field).toContain('alt="Une photo"');
+    const cover = renderBlock(
+      context({
+        content: { title: "T", bodyHtml: "", coverId: "m1", publishedAt: 0 },
+      }),
+      { id: "c", type: "content-cover", props: {} },
+    );
+    expect(cover).toContain('alt="Une photo"');
+  });
+
   test("chaque bloc du catalogue se rend sans erreur", () => {
     for (const def of BLOCKS) {
       const html = renderBlock(context(), createBlock(def.type));

@@ -256,13 +256,16 @@ export type ContentType = {
   id: string;
   name: string;
   prefix: string;
+  /** Champs déduits des blocs-champs du modèle : le formulaire des contenus. */
   fields: ContentField[];
+  /** Le modèle affiche le corps (bloc « Corps du contenu ») : il se rédige dans le contenu. */
   hasBody: boolean;
-  editor: "document" | "builder";
   layoutId: string | null;
   template: Block[];
   builtin: boolean;
   position: number;
+  /** Nombre de contenus : au-delà de zéro, le mode d'édition est verrouillé. */
+  contentCount?: number;
 };
 
 export type ContentStatus = "draft" | "published";

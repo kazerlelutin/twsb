@@ -6,6 +6,7 @@ import { confirmDialog, promptDialog } from "../ui/dialog.view";
 import { SelectField, TextField } from "../ui/field.view";
 import { Empty, PageHead, Panel } from "../ui/layout.view";
 import { api } from "./client";
+import { HistoryButton } from "./history.view";
 import { session } from "./session";
 import { notify, notifyError } from "./toast";
 
@@ -176,6 +177,7 @@ export function MenusView() {
             title={name()}
             action={
               <div class="ui-toolbar">
+                <HistoryButton entity="menu" id={current()?.id ?? ""} />
                 <Show when={isAdmin()}>
                   <Button
                     variant="quiet"

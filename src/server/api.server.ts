@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Block } from "../features/blocks/block.type";
-import { blockId } from "../features/blocks/catalog";
+import { deriveFields } from "../features/blocks/fields";
+import { walk } from "../features/blocks/tree.service";
 import { slugify } from "../features/render/html";
 import { renderDocument } from "../features/render/page.render";
 import {
@@ -9,12 +10,7 @@ import {
   type MenuItem,
 } from "../features/site/site.type";
 import { exportSite, ImportError, importSite } from "./export.server";
-import {
-  cleanData,
-  cleanFieldDefs,
-  deriveFields,
-  withFieldBlocks,
-} from "./fields.server";
+import { cleanData, cleanFieldDefs } from "./fields.server";
 import {
   api,
   body,
@@ -65,6 +61,19 @@ import {
   updateMedia,
   updateTag,
 } from "./repo.server";
+import {
+  ADMIN_ENTITIES,
+  RestoreError,
+  restoreRevision,
+} from "./restore.server";
+import {
+  dataStats,
+  deletedItems,
+  getRevision,
+  listRevisions,
+  purgeRevisions,
+  type RevisionEntity,
+} from "./revisions.server";
 import { sanitizeBlocks, sanitizeRich } from "./sanitize.server";
 import {
   DEFAULT_TEMPLATE,
@@ -269,12 +278,12 @@ const contentInput = z.object({
 /** Les valeurs des champs sont validées selon le type ; publier exige les champs obligatoires. */
 function withData<
   T extends { data?: Record<string, unknown>; status?: string },
->(input: T, typeId: string, currentStatus?: string) {
+>(input: T, typeId: string, current?: { status: string }) {
   const type = getType(typeId);
   if (!type) throw new HttpError(404, "Type introuvable.");
   if (input.data === undefined) return input;
   const { data, missing } = cleanData(type.fields, input.data);
-  const publishing = (input.status ?? currentStatus) === "published";
+  const publishing = (input.status ?? current?.status) === "published";
   if (publishing && missing.length)
     throw new HttpError(422, `Champs obligatoires : ${missing.join(", ")}.`);
   return { ...input, data };
@@ -314,8 +323,6 @@ export const contents = {
         ...withData(input, type.id),
         title,
         slug: uniqueSlug(type.id, input.slug || slugify(title)),
-        blocks:
-          input.blocks ?? (type.editor === "builder" ? starterBlocks() : []),
       },
       user.id,
     );
@@ -387,7 +394,7 @@ export const contents = {
           )
         : current.slug;
     const content = saveContent(current.id, {
-      ...withData(input, typeId, current.status),
+      ...withData(input, typeId, current),
       typeId,
       slug: nextSlug,
     });
@@ -437,21 +444,6 @@ export const contents = {
   }),
 };
 
-const starterBlocks = (): Block[] => [
-  {
-    id: blockId(),
-    type: "section",
-    props: { width: "container", anchor: "" },
-    children: [
-      {
-        id: blockId(),
-        type: "heading",
-        props: { text: "Nouvelle page", level: "1", align: "left" },
-      },
-    ],
-  },
-];
-
 /* Types de contenu */
 const typeInput = z.object({
   name: z.string().min(1).max(80),
@@ -459,14 +451,8 @@ const typeInput = z.object({
     .string()
     .max(40)
     .transform((v) => slugify(v)),
-  editor: z.enum(["document", "builder"]),
   layoutId: z.string().nullable(),
   template: blocksOrEmpty,
-  fields: z
-    .array(z.unknown())
-    .default([])
-    .transform((v) => cleanFieldDefs(v)),
-  hasBody: z.boolean().default(true),
 });
 
 const RESERVED = new Set([
@@ -509,6 +495,9 @@ export const tags = {
   }),
 };
 
+const contentCount = (typeId: string) =>
+  listContents({ typeId, limit: 1 }).total;
+
 export const types = {
   list: api(async ({ request }) => {
     await requireUser(request);
@@ -518,19 +507,7 @@ export const types = {
     await requireUser(request);
     const type = getType(params.id);
     if (!type) throw new HttpError(404, "Type introuvable.");
-    const template =
-      type.template.length || type.editor === "builder"
-        ? type.template
-        : DEFAULT_TEMPLATE();
-    return json({
-      type: {
-        ...type,
-        template:
-          type.editor === "document"
-            ? withFieldBlocks(template, type.fields)
-            : template,
-      },
-    });
+    return json({ type: { ...type, contentCount: contentCount(type.id) } });
   }),
   create: api(async ({ request }) => {
     await requireUser(request, "admin");
@@ -540,11 +517,9 @@ export const types = {
     const typeId = uniqueTypeId(slugify(input.name) || "type");
     const template = input.template.length
       ? input.template
-      : input.editor === "document"
-        ? sanitizeBlocks(DEFAULT_TEMPLATE())
-        : [];
+      : sanitizeBlocks(DEFAULT_TEMPLATE());
     return json(
-      { type: saveType(fromTemplate({ ...input, id: typeId, template })) },
+      { type: saveType(withTypeFields({ ...input, id: typeId, template })) },
       201,
     );
   }),
@@ -554,38 +529,36 @@ export const types = {
     if (!current) throw new HttpError(404, "Type introuvable.");
     const input = await body(request, typeInput.partial());
     const next = { ...current, ...input };
-    if (current.builtin && current.id === "page") next.prefix = "";
+    if (current.id === "page") next.prefix = "";
     if (next.prefix && RESERVED.has(next.prefix))
       throw new HttpError(409, "Préfixe réservé.");
-    return json({ type: saveType(input.template ? fromTemplate(next) : next) });
+    const saved = saveType(withTypeFields(next));
+    return json({ type: { ...saved, contentCount: contentCount(saved.id) } });
   }),
   remove: api(async ({ request, params }) => {
     await requireUser(request, "admin");
-    const count = listContents({ typeId: params.id, limit: 1 }).total;
-    if (count > 0)
+    if (contentCount(params.id) > 0)
       throw new HttpError(409, "Ce type contient encore des contenus.");
     if (!deleteType(params.id))
-      throw new HttpError(409, "Type intégré : suppression impossible.");
+      throw new HttpError(409, "Le type Page ne peut pas être supprimé.");
     return json({ ok: true });
   }),
 };
 
-/** Pour un type « champs + modèle », les champs viennent des blocs-champs posés dans le modèle. */
-function fromTemplate<
-  T extends {
-    editor: string;
-    template: Block[];
-    fields?: ContentField[];
-    hasBody?: boolean;
-  },
->(type: T): T {
-  if (type.editor !== "document") return type;
+/** Le formulaire d'un type vient de son modèle : blocs-champs posés et bloc « Corps ». */
+function withTypeFields<T extends { template: Block[] }>(
+  type: T,
+): T & { fields: ContentField[]; hasBody: boolean } {
   const derived = deriveFields(type.template);
+  let hasBody = false;
+  walk(derived.blocks, (b) => {
+    if (b.type === "content-body") hasBody = true;
+  });
   return {
     ...type,
-    template: derived.template,
+    template: derived.blocks,
     fields: derived.fields,
-    hasBody: derived.hasBody,
+    hasBody,
   };
 }
 
@@ -835,6 +808,69 @@ export const media = {
   }),
 };
 
+/* Révisions : historique, éléments supprimés, restauration, nettoyage */
+const ENTITIES = [
+  "content",
+  "type",
+  "layout",
+  "menu",
+  "tag",
+  "media",
+  "identity",
+  "plugins",
+] as const;
+
+export const revisions = {
+  list: api(async ({ request }) => {
+    await requireUser(request);
+    const q = query(request);
+    const entity = z.enum(ENTITIES).parse(q.get("entity"));
+    return json({ items: listRevisions(entity, q.get("id") ?? "") });
+  }),
+  get: api(async ({ request, params }) => {
+    await requireUser(request);
+    const revision = getRevision(params.id);
+    if (!revision) throw new HttpError(404, "Révision introuvable.");
+    return json({ revision });
+  }),
+  deleted: api(async ({ request }) => {
+    await requireUser(request);
+    return json({ items: deletedItems() });
+  }),
+  restore: api(async ({ request, params }) => {
+    const user = await requireUser(request);
+    const revision = getRevision(params.id);
+    if (!revision) throw new HttpError(404, "Révision introuvable.");
+    if (
+      ADMIN_ENTITIES.has(revision.entity as RevisionEntity) &&
+      user.role !== "admin"
+    )
+      throw new HttpError(403, "Réservé aux administrateurs.");
+    try {
+      return json(restoreRevision(params.id));
+    } catch (error) {
+      if (error instanceof RestoreError)
+        throw new HttpError(409, error.message);
+      throw error;
+    }
+  }),
+  purge: api(async ({ request }) => {
+    await requireUser(request, "admin");
+    const days = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(3650)
+      .parse(query(request).get("days"));
+    return json({ deleted: purgeRevisions(days), stats: dataStats() });
+  }),
+};
+
+export const stats = api(async ({ request }) => {
+  await requireUser(request, "admin");
+  return json({ stats: dataStats() });
+});
+
 /* Aperçu d'un lien collé dans l'éditeur */
 export const linkPreview = api(async ({ request }) => {
   await requireUser(request);
@@ -859,6 +895,7 @@ const previewInput = z.object({
   layoutId: z.string().nullable().optional(),
   title: z.string().optional(),
   fields: z.array(z.unknown()).optional(),
+  data: z.record(z.unknown()).optional(),
 });
 
 const SAMPLE_BODY =
@@ -882,9 +919,12 @@ export const preview = api(async ({ request }) => {
     current: l.code === (content?.lang ?? "") || (!content && i === 0),
   }));
   const type = getType(input.typeId ?? content?.typeId ?? "page");
+  const derived = deriveFields(input.blocks);
   const fields = input.fields
     ? cleanFieldDefs(input.fields)
-    : (type?.fields ?? []);
+    : input.kind === "template"
+      ? derived.fields
+      : (type?.fields ?? []);
   ctx.content = {
     title: input.title ?? content?.title ?? "Titre d'exemple",
     bodyHtml: content?.body || SAMPLE_BODY,
@@ -892,7 +932,10 @@ export const preview = api(async ({ request }) => {
     publishedAt: content?.publishedAt ?? Date.now(),
     authorName: content?.authorName ?? "Auteur",
     fields,
-    data: content?.data ?? {},
+    // Valeurs en cours de saisie, nettoyées comme à l'enregistrement.
+    data: input.data
+      ? cleanData(fields, input.data).data
+      : (content?.data ?? {}),
     tags: content?.tags.length
       ? content.tags
       : [{ id: "x", name: "Exemple", slug: "exemple" }],
@@ -900,7 +943,7 @@ export const preview = api(async ({ request }) => {
   let layout = layoutFor(type);
   if (input.layoutId !== undefined)
     layout = input.layoutId ? getLayout(input.layoutId) : layout;
-  let main = input.blocks;
+  let main = derived.blocks;
   if (input.kind === "layout") {
     const base = layout ?? {
       id: "preview",

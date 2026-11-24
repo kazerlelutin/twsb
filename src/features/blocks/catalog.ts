@@ -851,7 +851,8 @@ const TEXT_KINDS = new Set<ContentFieldType>([
 const FIELD_BLOCKS: BlockDef[] = CONTENT_FIELD_TYPES.map(
   ({ value: kind, label }) => ({
     type: `${FIELD_PREFIX}${kind}`,
-    label,
+    // « Champ … » : distinct des blocs ordinaires (Image, Lien, Galerie…).
+    label: `Champ ${label.toLowerCase()}`,
     icon: FIELD_ICONS[kind],
     category: "fields",
     scope: ["template"],

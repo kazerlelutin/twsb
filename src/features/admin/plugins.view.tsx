@@ -4,6 +4,7 @@ import { Button } from "../ui/button.view";
 import { TextField, Toggle } from "../ui/field.view";
 import { PageHead, Panel } from "../ui/layout.view";
 import { api } from "./client";
+import { HistoryButton } from "./history.view";
 import { notify, notifyError } from "./toast";
 
 type PluginsState = { plugins: Plugins; mainLang: string };
@@ -63,7 +64,10 @@ export function PluginsView() {
 
   return (
     <>
-      <PageHead title="Extensions" />
+      <PageHead
+        title="Extensions"
+        actions={<HistoryButton entity="plugins" id="plugins" />}
+      />
       <Show when={i18n()}>
         {(config) => (
           <div class="ui-plugins">

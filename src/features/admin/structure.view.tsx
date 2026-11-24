@@ -2,21 +2,18 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { createResource, createSignal, For, Show } from "solid-js";
 import type { Block } from "../blocks/block.type";
 import { isFieldBlock } from "../blocks/catalog";
+import { deriveFields } from "../blocks/fields";
 import { walk } from "../blocks/tree.service";
 import { Builder } from "../builder/builder.view";
 import type { ContentType, Layout } from "../site/site.type";
 import { Button, LinkButton } from "../ui/button.view";
 import { confirmDialog, promptDialog } from "../ui/dialog.view";
 import { ColorField, SelectField, TextField, Toggle } from "../ui/field.view";
-import { Badge, Empty, Notice, PageHead, Panel } from "../ui/layout.view";
+import { Badge, Empty, Notice, PageHead } from "../ui/layout.view";
 import { Modal } from "../ui/modal.view";
 import { api } from "./client";
+import { HistoryButton } from "./history.view";
 import { notify, notifyError } from "./toast";
-
-const EDITORS = [
-  { value: "document", label: "Champs + modèle commun" },
-  { value: "builder", label: "Page libre en blocs" },
-];
 
 /* Types de contenu */
 
@@ -41,7 +38,6 @@ export function TypesView() {
         body: {
           name: form.get("name"),
           prefix: form.get("prefix"),
-          editor: form.get("editor"),
           layoutId: form.get("layoutId") || null,
         },
       });
@@ -88,11 +84,8 @@ export function TypesView() {
               </h2>
               <p>{type.prefix ? `/${type.prefix}/…` : "/…"}</p>
               <div class="ui-card__foot">
-                <Badge tone="accent">
-                  {type.editor === "builder" ? "Blocs" : "Document"}
-                </Badge>
                 <Badge>{layoutName(type.layoutId)}</Badge>
-                <Show when={!type.builtin}>
+                <Show when={type.id !== "page"}>
                   <Button
                     variant="quiet"
                     size="sm"
@@ -124,12 +117,6 @@ export function TypesView() {
             label="Préfixe d'URL"
             name="prefix"
             placeholder="projets"
-          />
-          <SelectField
-            label="Édition"
-            name="editor"
-            options={EDITORS}
-            value="document"
           />
           <SelectField
             label="Layout"
@@ -165,20 +152,19 @@ function useType() {
   const save = async () => {
     const t = type();
     if (!t) return;
+    // Clés des champs fixées ici comme sur le serveur : elles restent stables.
+    const template = deriveFields(t.template).blocks;
     try {
       const res = await api<{ type: ContentType }>(`/api/types/${t.id}`, {
         method: "PATCH",
         body: {
           name: t.name,
           prefix: t.prefix,
-          editor: t.editor,
           layoutId: t.layoutId,
-          template: t.template,
-          fields: t.fields,
-          hasBody: t.hasBody,
+          template,
         },
       });
-      mutate({ ...res.type, template: t.template });
+      mutate({ ...res.type, template });
       setDirty(false);
       notify("Type enregistré");
     } catch (e) {
@@ -197,6 +183,15 @@ const templateFields = (blocks: Block[]) => {
   return out;
 };
 
+/** Le bloc « Corps du contenu » ajoute l'éditeur de texte au formulaire. */
+const hasBody = (blocks: Block[]) => {
+  let found = false;
+  walk(blocks, (b) => {
+    if (b.type === "content-body") found = true;
+  });
+  return found;
+};
+
 function TypeSettings(props: {
   type: ContentType;
   layouts: Layout[];
@@ -209,16 +204,6 @@ function TypeSettings(props: {
         value={props.type.prefix}
         disabled={props.type.id === "page"}
         onChange={(e) => props.onChange({ prefix: e.currentTarget.value })}
-      />
-      <SelectField
-        label="Édition"
-        options={EDITORS}
-        value={props.type.editor}
-        onChange={(e) =>
-          props.onChange({
-            editor: e.currentTarget.value as ContentType["editor"],
-          })
-        }
       />
       <SelectField
         label="Layout"
@@ -251,104 +236,85 @@ export function TypeEditorView() {
           aria-label="Modifications non enregistrées"
         />
       </Show>
+      <Show when={type()}>
+        {(t) => <HistoryButton entity="type" id={t().id} />}
+      </Show>
       <Button variant="solid" icon="save" onClick={save}>
         <span class="ui-btn__text">Enregistrer</span>
       </Button>
     </>
   );
   return (
-    <Show when={type()}>
+    <Show
+      when={!type.error && type()}
+      fallback={
+        <Show when={type.error}>
+          <Notice tone="danger">Type introuvable.</Notice>
+        </Show>
+      }
+    >
       {(t) => (
-        <Show
-          when={t().editor === "document"}
-          fallback={
+        <Builder
+          scope="template"
+          zones={[{ key: "main", label: "Modèle" }]}
+          value={{ main: t().template }}
+          contentFields={t().fields}
+          onChange={(v) => change({ template: v.main })}
+          preview={(v) => ({
+            kind: "template",
+            typeId: t().id,
+            layoutId: t().layoutId,
+            blocks: v.main,
+          })}
+          bar={
             <>
-              <PageHead
-                eyebrow="Type de contenu"
-                title={t().name}
-                actions={
-                  <>
-                    <LinkButton variant="quiet" icon="back" href="/admin/types">
-                      Types
-                    </LinkButton>
-                    {saveButton()}
-                  </>
-                }
+              <LinkButton
+                variant="quiet"
+                icon="back"
+                href="/admin/types"
+                aria-label="Types"
               />
-              <Panel title="Réglages">
-                <TextField
-                  label="Nom"
-                  value={t().name}
-                  onInput={(e) => change({ name: e.currentTarget.value })}
-                />
-                <TypeSettings
-                  type={t()}
-                  layouts={layouts() ?? []}
-                  onChange={change}
-                />
-              </Panel>
+              <input
+                class="ui-input ui-input--title"
+                aria-label="Nom du type"
+                value={t().name}
+                onInput={(e) => change({ name: e.currentTarget.value })}
+              />
             </>
           }
-        >
-          <Builder
-            scope="template"
-            zones={[{ key: "main", label: "Modèle" }]}
-            value={{ main: t().template }}
-            contentFields={t().fields}
-            onChange={(v) => change({ template: v.main })}
-            preview={(v) => ({
-              kind: "template",
-              typeId: t().id,
-              layoutId: t().layoutId,
-              blocks: v.main,
-            })}
-            bar={
-              <>
-                <LinkButton
-                  variant="quiet"
-                  icon="back"
-                  href="/admin/types"
-                  aria-label="Types"
-                />
-                <input
-                  class="ui-input ui-input--title"
-                  aria-label="Nom du type"
-                  value={t().name}
-                  onInput={(e) => change({ name: e.currentTarget.value })}
-                />
-              </>
-            }
-            actions={saveButton()}
-            settingsTitle="Type"
-            settings={
-              <>
-                <TypeSettings
-                  type={t()}
-                  layouts={layouts() ?? []}
-                  onChange={change}
-                />
-                <div class="ui-field">
-                  <span class="ui-field__label">Formulaire des contenus</span>
-                  <Show
-                    when={templateFields(t().template).length}
-                    fallback={
-                      <p class="ui-muted">
-                        Titre{t().hasBody ? " | corps" : ""}
-                      </p>
-                    }
-                  >
-                    <ol class="ui-form-preview">
-                      <li>Titre</li>
-                      <For each={templateFields(t().template)}>
-                        {(label) => <li>{label}</li>}
-                      </For>
-                    </ol>
-                  </Show>
-                </div>
-              </>
-            }
-          />
-        </Show>
+          actions={saveButton()}
+          settingsTitle="Type"
+          settings={
+            <>
+              <TypeSettings
+                type={t()}
+                layouts={layouts() ?? []}
+                onChange={change}
+              />
+              <div class="ui-field">
+                <span class="ui-field__label">Formulaire des contenus</span>
+                <Show
+                  when={templateFields(t().template).length}
+                  fallback={
+                    <p class="ui-muted">
+                      Titre{hasBody(t().template) ? " | corps" : ""}
+                    </p>
+                  }
+                >
+                  <ol class="ui-form-preview">
+                    <li>Titre</li>
+                    <For each={templateFields(t().template)}>
+                      {(label) => <li>{label}</li>}
+                    </For>
+                    <Show when={hasBody(t().template)}>
+                      <li>Corps</li>
+                    </Show>
+                  </ol>
+                </Show>
+              </div>
+            </>
+          }
+        />
       )}
     </Show>
   );
@@ -482,7 +448,14 @@ export function LayoutEditorView() {
     }
   };
   return (
-    <Show when={layout()}>
+    <Show
+      when={!layout.error && layout()}
+      fallback={
+        <Show when={layout.error}>
+          <Notice tone="danger">Layout introuvable.</Notice>
+        </Show>
+      }
+    >
       {(l) => (
         <Builder
           scope="layout"
@@ -526,6 +499,7 @@ export function LayoutEditorView() {
                   aria-label="Modifications non enregistrées"
                 />
               </Show>
+              <HistoryButton entity="layout" id={l().id} />
               <Button variant="solid" icon="save" onClick={save}>
                 <span class="ui-btn__text">Enregistrer</span>
               </Button>
