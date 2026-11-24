@@ -150,6 +150,23 @@ describe("rendu des blocs", () => {
     );
   });
 
+  test("la taille de texte d'un bloc titre vise le h1-h4 (sinon écrasée par le thème)", () => {
+    for (const type of ["heading", "archive-title", "content-title"]) {
+      const ctx = context();
+      renderBlock(ctx, {
+        id: "t",
+        type,
+        props: { text: "T" },
+        style: { desktop: { fontSize: 72 }, mobile: { fontSize: 32 } },
+      });
+      const css = ctx.css.join("");
+      expect(css).toContain(".b-t>:is(h1,h2,h3,h4){font-size:72px}");
+      expect(css).toContain(
+        "@media (max-width:768px){.b-t>:is(h1,h2,h3,h4){font-size:32px}}",
+      );
+    }
+  });
+
   test("rend un menu avec bouton mobile accessible et page courante", () => {
     const html = renderBlock(context({ currentPath: "/blog" }), {
       id: "m",

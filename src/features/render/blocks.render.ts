@@ -153,6 +153,9 @@ export function styleCss(ctx: RenderContext, style: BlockStyle | undefined) {
   return rules.join(";");
 }
 
+/** Blocs dont le contenu est un titre h1-h4 : leur taille de texte s'applique au titre. */
+const TITLE_BLOCKS = new Set(["heading", "content-title", "archive-title"]);
+
 /** Le style ordinateur s'applique partout, le mobile le surcharge ; « masquer » vaut par appareil. */
 function collectCss(ctx: RenderContext, block: Block) {
   const desktop = styleCss(ctx, block.style?.desktop);
@@ -161,6 +164,16 @@ function collectCss(ctx: RenderContext, block: Block) {
     block.type === "section" ? `.b-${block.id}>.ws-section` : `.b-${block.id}`;
   if (desktop) ctx.css.push(`${cls}{${desktop}}`);
   if (mobile) ctx.css.push(`@media (max-width:768px){${cls}{${mobile}}}`);
+  /* Le thème fixe la taille des h1-h4 : la taille d'un bloc titre doit les viser directement. */
+  if (TITLE_BLOCKS.has(block.type)) {
+    const title = `.b-${block.id}>:is(h1,h2,h3,h4)`;
+    const d = px(num(block.style?.desktop?.fontSize));
+    const m = px(num(block.style?.mobile?.fontSize));
+    if (block.style?.desktop?.fontSize && d)
+      ctx.css.push(`${title}{font-size:${d}}`);
+    if (block.style?.mobile?.fontSize && m)
+      ctx.css.push(`@media (max-width:768px){${title}{font-size:${m}}}`);
+  }
   if (block.style?.desktop?.hidden)
     ctx.css.push(`@media (min-width:769px){.b-${block.id}{display:none}}`);
   if (block.style?.mobile?.hidden)
