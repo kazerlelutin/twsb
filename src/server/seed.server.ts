@@ -1,10 +1,15 @@
+import fs from "node:fs";
+import path from "node:path";
+import logoSvg from "../../public/twsb-mark.svg?raw";
 import type { Block } from "../features/blocks/block.type";
 import { blockId } from "../features/blocks/catalog";
-import { type Db, onDbOpen } from "./db.server";
+import { type Db, onDbOpen, uid } from "./db.server";
 import { env } from "./env.server";
+import { mediaDir } from "./media.server";
 import {
   getIdentity,
   getMenu,
+  insertMedia,
   listLayouts,
   listTypes,
   saveContent,
@@ -122,7 +127,27 @@ const ARTICLE_BODY = `<p>Cet article montre ce que sait faire l'éditeur de text
 <h2>Publier</h2>
 <p>Un article reste en brouillon tant que vous ne cliquez pas sur Publier. Jusqu'à sa première publication, son adresse suit le titre.</p>`;
 
-/** Données de départ : layout, types, menu et page d'accueil. */
+/** Logo d'exemple : le pictogramme TWSB, ajouté à la médiathèque comme un envoi. */
+function seedLogo() {
+  const id = uid();
+  const bytes = Buffer.from(logoSvg, "utf8");
+  fs.mkdirSync(mediaDir(id), { recursive: true });
+  fs.writeFileSync(path.join(mediaDir(id), "original.svg"), bytes);
+  return insertMedia({
+    id,
+    name: "twsb-mark.svg",
+    mime: "image/svg+xml",
+    ext: "svg",
+    size: bytes.byteLength,
+    width: null,
+    height: null,
+    alt: "Logo",
+    variants: [],
+    createdAt: Date.now(),
+  });
+}
+
+/** Données de départ : layout, types, menu, logo et page d'accueil. */
 export function seed(database: Db) {
   const empty = !database.get("SELECT 1 FROM content_types LIMIT 1");
   if (!empty) return;
@@ -188,7 +213,12 @@ export function seed(database: Db) {
     excerpt: "Un article d'exemple qui montre ce que sait faire l'éditeur.",
     body: ARTICLE_BODY,
   });
-  saveIdentity({ ...getIdentity(), homeId: home.id });
+  const identity = getIdentity();
+  saveIdentity({
+    ...identity,
+    homeId: home.id,
+    logoId: identity.logoId || seedLogo().id,
+  });
 }
 
 onDbOpen(seed);
