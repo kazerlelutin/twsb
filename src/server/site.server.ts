@@ -12,8 +12,8 @@ import {
   type Layout,
   type Tag,
 } from "../features/site/site.type";
+import { config } from "./config.server";
 import { db } from "./db.server";
-import { env } from "./env.server";
 import {
   contentBySlug,
   contentPath,
@@ -162,12 +162,12 @@ export function renderContent(content: Content, options: ContextOptions = {}) {
     title: content.id === identity.homeId ? identity.name : content.title,
     description: content.excerpt || content.seoDescription,
     ogImageId: content.coverId,
-    canonical: path ? `${env().publicUrl}${path}` : undefined,
+    canonical: path ? `${config().publicUrl}${path}` : undefined,
     noindex: content.status !== "published",
     lang: languages.find((l) => l.current)?.tag,
     alternates: languages
       .filter((l) => l.translated)
-      .map((l) => ({ lang: l.tag, url: `${env().publicUrl}${l.url}` })),
+      .map((l) => ({ lang: l.tag, url: `${config().publicUrl}${l.url}` })),
   });
 }
 
@@ -238,7 +238,7 @@ function renderArchive(archive: ArchiveInput, currentPath: string) {
       archive.page > 1
         ? `${archive.title} | page ${archive.page}`
         : archive.title,
-    canonical: `${env().publicUrl}${path}`,
+    canonical: `${config().publicUrl}${path}`,
     lang: languages.find((l) => l.current)?.tag,
   });
 }
@@ -411,7 +411,7 @@ export function renderPublic(pathname: string): SiteResponse {
 export const clearCache = () => cache.clear();
 
 export function sitemap() {
-  const base = env().publicUrl;
+  const base = config().publicUrl;
   const homeId = getIdentity().homeId;
   const langs = new Set(siteLanguages().map((l) => l.code));
   const rows = db()
@@ -434,4 +434,4 @@ export function sitemap() {
 }
 
 export const robots = () =>
-  `User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: ${env().publicUrl}/sitemap.xml\n`;
+  `User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: ${config().publicUrl}/sitemap.xml\n`;

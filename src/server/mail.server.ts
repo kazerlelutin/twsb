@@ -1,5 +1,5 @@
 import { esc } from "../features/render/html";
-import { env } from "./env.server";
+import { config } from "./config.server";
 import { getIdentity } from "./repo.server";
 
 export type Mail = { to: string; subject: string; text: string; html: string };
@@ -16,7 +16,7 @@ export async function sendMail(mail: Mail): Promise<boolean> {
     await override(mail);
     return true;
   }
-  const smtp = env().smtp;
+  const smtp = config().smtp;
   if (!smtp) {
     console.info(
       `[mail] SMTP non configuré | ${mail.to} | ${mail.subject}\n${mail.text}`,
@@ -35,7 +35,7 @@ export async function sendMail(mail: Mail): Promise<boolean> {
 }
 
 export const activationUrl = (token: string) =>
-  `${env().publicUrl}/admin/activate?token=${encodeURIComponent(token)}`;
+  `${config().publicUrl}/admin/activate?token=${encodeURIComponent(token)}`;
 
 export function accountMail(
   to: string,

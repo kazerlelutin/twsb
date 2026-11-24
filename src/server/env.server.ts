@@ -23,6 +23,8 @@ const schema = z
   .transform((e) => ({
     dataDir: path.resolve(e.DATA_DIR ?? "data"),
     publicUrl: (e.PUBLIC_URL ?? "http://localhost:3000").replace(/\/$/, ""),
+    /** URL publique imposée par l'environnement (sinon réglable dans l'admin). */
+    publicUrlFromEnv: !!e.PUBLIC_URL,
     adminEmail: e.ADMIN_EMAIL,
     adminPassword: e.ADMIN_PASSWORD,
     smtp: e.SMTP_HOST

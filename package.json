@@ -1,18 +1,20 @@
 {
   "name": "twsb",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "bun --bun vite dev --host 0.0.0.0 --port 3000",
-    "build": "bun --bun vite build",
-    "start": "bun .output/server/index.mjs",
+    "build": "bun --bun vite build && bun scripts/stamp-version.ts",
+    "start": "bun launcher/launcher.mjs",
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "bddgen && playwright test",
-    "check": "bun run lint && bun run typecheck && bun run test"
+    "check": "bun run lint && bun run typecheck && bun run test",
+    "release": "bun scripts/release.ts"
   },
   "dependencies": {
     "@solidjs/meta": "^0.29.4",

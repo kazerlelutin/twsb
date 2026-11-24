@@ -758,3 +758,11 @@ When("je passe à la mise en page {string}", async ({ page }, mode: string) => {
     .getByRole("button", { name: mode, exact: true })
     .click();
 });
+
+Then("je vois la version en service", async ({ page }) => {
+  const panel = page.getByRole("region", { name: "Version" });
+  await expect(panel.locator("dd").first()).toHaveText(/^\d+\.\d+\.\d+/);
+  await expect(
+    page.getByRole("region", { name: "Configuration" }),
+  ).toBeVisible();
+});

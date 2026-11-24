@@ -47,6 +47,31 @@ export const getUser = (id: string) => {
 export const userRowByEmail = (email: string) =>
   db().get<UserRow>("SELECT * FROM users WHERE email = ?", email.trim());
 
+/** Premier administrateur (installation) : refusé dès qu'un compte existe. */
+export async function createFirstAdmin(
+  email: string,
+  password: string,
+  name = "",
+) {
+  const hash = await hashPassword(password);
+  const t = now();
+  const id = uid();
+  const created = db().tx(() => {
+    if (countUsers() > 0) return false;
+    db().run(
+      "INSERT INTO users (id, email, name, role, status, password_hash, created_at, updated_at) VALUES (?, ?, ?, 'admin', 'active', ?, ?, ?)",
+      id,
+      email.trim(),
+      name,
+      hash,
+      t,
+      t,
+    );
+    return true;
+  });
+  return created ? (getUser(id) as User) : undefined;
+}
+
 export async function createActiveUser(
   email: string,
   password: string,

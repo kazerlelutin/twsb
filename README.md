@@ -67,23 +67,56 @@ Mesures locales sur le build de production (50 connexions simultanées) :
 
 Une page en cache coûte autant que la route de santé : le serveur HTTP est la limite, pas la base. Générer des fichiers statiques que le back relirait serait **plus lent** que la mémoire et ajouterait un état à synchroniser. Les fichiers restent utiles pour un autre usage : l'export contient `static/`, déployable tel quel sur un CDN.
 
-## Déploiement CapRover
+## Installer une version publiée
 
-1. Créer l'application, activer **Persistent Data**, monter le dossier `/data`.
-2. Variables : `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `PUBLIC_URL`, et `SMTP_*` si besoin.
-3. Port du conteneur : `3000`. Déployer (`caprover deploy`) : `captain-definition` utilise le `Dockerfile` (cible `production`).
+Chaque version publiée (tag `vX.Y.Z`) fournit :
+
+- une **image Docker** : `ghcr.io/kazerlelutin/twsb:X.Y.Z` (et `:latest`) ;
+- une **archive de build** prête à lancer, `twsb-vX.Y.Z.tar.gz`, avec ses empreintes (`checksums.txt`) dans la Release GitHub.
+
+**Docker / CapRover** : déployer l'image, monter `/data`, exposer le port `3000`. Avec CapRover, un `captain-definition` réduit à `{"schemaVersion": 2, "imageName": "ghcr.io/kazerlelutin/twsb:latest"}` suffit (ou le `Dockerfile` du dépôt pour construire depuis les sources).
+
+**Sans Docker** (Bun ≥ 1.3) :
+
+```bash
+tar -xzf twsb-vX.Y.Z.tar.gz && cd twsb
+DATA_DIR=./data PORT=3000 bun launcher/launcher.mjs
+```
+
+**Paramétrer une fois installé** : aucune variable n'est obligatoire. Au premier lancement, la page de connexion propose l'**installation** (nom du site, administrateur). L'URL publique (déduite de l'adresse d'installation) et le SMTP se règlent ensuite dans **Système**. Une variable d'environnement définie l'emporte toujours sur le réglage de l'admin.
+
+## Versions et mises à jour
+
+- **Publier** : `bun run release patch|minor|major` met à jour `package.json`, commite et crée le tag ; `git push --follow-tags` déclenche la CI de release (vérifications, build, archive, image Docker).
+- **CI** : `.github/workflows/ci.yml` (lint, types, tests, build, E2E) à chaque push ; `release.yml` sur les tags `v*.*.*` (le tag doit correspondre à `package.json`).
+- **Détection** : **Système** interroge la dernière Release GitHub (cache six heures, bouton « Vérifier »). Dépôt privé : fournir `GITHUB_TOKEN` (lecture du dépôt).
+- **Mise à jour** depuis l'admin :
+  1. sauvegarde cohérente de la base (`/data/backups`) ;
+  2. téléchargement de l'archive, contrôle de son empreinte sha256 ;
+  3. installation dans `/data/releases/X.Y.Z`, puis redémarrage ;
+  4. le **lanceur** essaie la nouvelle version : elle doit ouvrir la base (migrations jouées) et répondre sur `/healthz` sous 90 s. Sinon il **restaure la base** et relance l'ancienne version, et l'échec s'affiche dans Système.
+- **Retour arrière** : chaque sauvegarde (avant mise à jour, ou manuelle) peut être restaurée depuis Système : la base revient à cet état, avec la version qui l'a produite.
+- **Mise à jour de l'image** (`docker pull`) : même filet. Le lanceur sauvegarde la base avant de lancer une version jamais essayée, et revient en arrière si elle échoue.
+
+Le lanceur (`launcher/`) est le point d'entrée de l'image : il choisit la version la plus récente entre celle de l'image et celle installée dans `/data`, en écartant les versions en échec.
 
 Hors CapRover : `make prod` (voir `docker-compose.prod.yml`). L'image ne contient aucun état : sauvegarder `/data` suffit.
 
 ## Variables d'environnement
 
+Toutes facultatives : les réglages se font aussi dans l'admin.
+
 | Variable | Rôle |
 | --- | --- |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Premier administrateur (créé si aucun compte). |
-| `PUBLIC_URL` | URL publique : liens des e-mails, sitemap, canonical. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Premier administrateur (sinon : écran d'installation). |
+| `PUBLIC_URL` | URL publique : liens des e-mails, sitemap, canonical (sinon : réglage Système). |
 | `DATA_DIR` | Dossier persistant (`/data` en conteneur). |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Envoi des e-mails d'activation et de réinitialisation. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Envoi des e-mails (sinon : réglage Système). |
 | `PORT` | Port HTTP (3000). |
+| `GITHUB_TOKEN` | Lecture des Releases si le dépôt est privé. |
+| `TWSB_UPDATE_REPO` | Dépôt des versions (`kazerlelutin/twsb`). |
+| `TWSB_UPDATE_API` | API compatible GitHub (GitHub Enterprise, miroir). |
+| `TWSB_HEALTH_TIMEOUT` | Délai d'essai d'une nouvelle version, en ms (90000). |
 
 ## Tests
 

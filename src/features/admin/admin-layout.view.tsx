@@ -36,6 +36,7 @@ const items = (admin: boolean): NavItem[] => [
         { href: "/admin/plugins", label: "Extensions", icon: "plugin" },
         { href: "/admin/users", label: "Comptes", icon: "users" },
         { href: "/admin/data", label: "Données", icon: "database" },
+        { href: "/admin/system", label: "Système", icon: "settings" },
       ]
     : []),
 ];

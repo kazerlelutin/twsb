@@ -49,3 +49,8 @@ Fonctionnalité: Extensions, modales et éditeur enrichi
   Scénario: La page Menus ouvre le premier menu
     Quand j'ouvre "/admin/menus"
     Alors le menu "Principal" est ouvert
+
+  Scénario: La page Système montre la version et la configuration
+    Quand j'ouvre "/admin/system"
+    Alors je vois la version en service
+    Et la page ne présente aucune violation d'accessibilité

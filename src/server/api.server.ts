@@ -9,11 +9,18 @@ import {
   LANGUAGE_NAMES,
   type MenuItem,
 } from "../features/site/site.type";
+import {
+  config,
+  getStoredConfig,
+  saveStoredConfig,
+  storedConfigSchema,
+} from "./config.server";
 import { exportSite, ImportError, importSite } from "./export.server";
 import { cleanData, cleanFieldDefs } from "./fields.server";
 import {
   api,
   body,
+  checkOrigin,
   clearSessionCookie,
   cookie,
   currentUser,
@@ -75,6 +82,7 @@ import {
   type RevisionEntity,
 } from "./revisions.server";
 import { sanitizeBlocks, sanitizeRich } from "./sanitize.server";
+import { ensureAdmin } from "./seed.server";
 import {
   DEFAULT_ARCHIVE,
   DEFAULT_TEMPLATE,
@@ -86,8 +94,19 @@ import {
 } from "./site.server";
 import { UnfurlError, unfurl } from "./unfurl.server";
 import {
+  checkLatest,
+  createBackup,
+  deleteBackup,
+  revertTo,
+  runUpdate,
+  systemStatus,
+  UpdateError,
+} from "./update.server";
+import {
   activateUser,
   activeAdmins,
+  countUsers,
+  createFirstAdmin,
   createSession,
   deleteUser,
   destroySession,
@@ -129,6 +148,56 @@ export const login = api(async ({ request }) => {
     "set-cookie": sessionCookie(request, session.token, session.maxAge),
   });
 });
+
+/* Première installation : sans aucun compte, on crée l'administrateur et le site. */
+const requestOrigin = (request: Request) => {
+  const url = new URL(request.url);
+  const proto =
+    request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
+    url.protocol.replace(":", "");
+  const host =
+    request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
+    request.headers.get("host") ||
+    url.host;
+  return `${proto}://${host}`;
+};
+
+export const setup = {
+  status: api(async () => {
+    await ensureAdmin();
+    return json({ needed: countUsers() === 0 });
+  }),
+  create: api(async ({ request }) => {
+    checkOrigin(request);
+    await ensureAdmin();
+    const input = await body(
+      request,
+      z.object({
+        email: z.string().email(),
+        password: z.string(),
+        name: z.string().max(120).default(""),
+        siteName: z.string().min(1).max(120),
+      }),
+    );
+    const problem = passwordProblem(input.password);
+    if (problem) throw new HttpError(422, problem);
+    const user = await createFirstAdmin(
+      input.email,
+      input.password,
+      input.name,
+    );
+    if (!user) throw new HttpError(409, "Le site est déjà installé.");
+    saveIdentity({ ...getIdentity(), name: input.siteName.trim() });
+    // L'adresse d'installation devient l'URL publique, sauf si l'environnement l'impose.
+    const stored = getStoredConfig();
+    if (!config().sources.publicUrl.startsWith("env") && !stored.publicUrl)
+      saveStoredConfig({ ...stored, publicUrl: requestOrigin(request) });
+    const session = createSession(user.id);
+    return json({ user }, 201, {
+      "set-cookie": sessionCookie(request, session.token, session.maxAge),
+    });
+  }),
+};
 
 export const logout = api(async ({ request }) => {
   const token = cookie(request, SESSION_COOKIE);
@@ -881,6 +950,86 @@ export const stats = api(async ({ request }) => {
   await requireUser(request, "admin");
   return json({ stats: dataStats() });
 });
+
+/* Système : version, mises à jour, sauvegardes, configuration */
+const updateErrors = async <T>(fn: () => T | Promise<T>) => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (error instanceof UpdateError) throw new HttpError(409, error.message);
+    throw error;
+  }
+};
+
+/** Configuration renvoyée à l'admin : le mot de passe SMTP n'en sort jamais. */
+const publicConfig = () => {
+  const stored = getStoredConfig();
+  return {
+    ...stored,
+    smtp: { ...stored.smtp, pass: "", hasPass: !!stored.smtp.pass },
+    effective: { publicUrl: config().publicUrl, sources: config().sources },
+  };
+};
+
+export const system = {
+  status: api(async ({ request }) => {
+    await requireUser(request, "admin");
+    const force = query(request).get("check") === "1";
+    return json({ ...(await systemStatus(force)), config: publicConfig() });
+  }),
+  update: api(async ({ request }) => {
+    await requireUser(request, "admin");
+    const { release } = await checkLatest(true);
+    if (!release) throw new HttpError(409, "Aucune version disponible.");
+    return json({ progress: await updateErrors(() => runUpdate(release)) });
+  }),
+  backup: api(async ({ request }) => {
+    await requireUser(request, "admin");
+    createBackup("Sauvegarde manuelle");
+    return json({ ok: true }, 201);
+  }),
+  revert: api(async ({ request }) => {
+    await requireUser(request, "admin");
+    const { name } = await body(
+      request,
+      z.object({ name: z.string().max(200) }),
+    );
+    await updateErrors(() => revertTo(name));
+    return json({ ok: true });
+  }),
+  removeBackup: api(async ({ request, params }) => {
+    await requireUser(request, "admin");
+    await updateErrors(() => deleteBackup(params.name));
+    return json({ ok: true });
+  }),
+  saveConfig: api(async ({ request }) => {
+    await requireUser(request, "admin");
+    const input = await body(request, storedConfigSchema);
+    const current = getStoredConfig();
+    // Mot de passe laissé vide : on garde celui enregistré.
+    const pass = input.smtp.pass || current.smtp.pass;
+    saveStoredConfig({ ...input, smtp: { ...input.smtp, pass } });
+    return json({ config: publicConfig() });
+  }),
+  mailTest: api(async ({ request }) => {
+    const user = await requireUser(request, "admin");
+    if (!config().smtp) throw new HttpError(409, "SMTP non configuré.");
+    try {
+      await sendMail({
+        to: user.email,
+        subject: "Test d'envoi",
+        text: "La configuration SMTP fonctionne.",
+        html: "<p>La configuration SMTP fonctionne.</p>",
+      });
+    } catch (error) {
+      throw new HttpError(
+        502,
+        `Envoi impossible : ${(error as Error).message}`.slice(0, 300),
+      );
+    }
+    return json({ ok: true, to: user.email });
+  }),
+};
 
 /* Aperçu d'un lien collé dans l'éditeur */
 export const linkPreview = api(async ({ request }) => {

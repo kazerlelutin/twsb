@@ -9,3 +9,4 @@ test-results
 playwright-report
 coverage
 .e2e-data
+dist

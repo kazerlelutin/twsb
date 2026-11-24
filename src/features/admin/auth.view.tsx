@@ -30,7 +30,83 @@ const safeNext = (value: unknown) =>
     ? value
     : "/admin";
 
+/** Première installation : aucun compte n'existe encore. */
+function SetupForm() {
+  const navigate = useNavigate();
+  const [error, setError] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const submit = async (e: SubmitEvent) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget as HTMLFormElement);
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/auth/setup", {
+        body: {
+          siteName: form.get("siteName"),
+          name: form.get("name"),
+          email: form.get("email"),
+          password: form.get("password"),
+        },
+      });
+      await session.refetch();
+      navigate("/admin", { replace: true });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <AuthCard title="Installation">
+      <form onSubmit={submit}>
+        <TextField label="Nom du site" name="siteName" required />
+        <TextField label="Votre nom" name="name" autocomplete="name" />
+        <TextField
+          label="E-mail"
+          name="email"
+          type="email"
+          autocomplete="username"
+          required
+        />
+        <TextField
+          label="Mot de passe"
+          name="password"
+          type="password"
+          autocomplete="new-password"
+          minlength={10}
+          hint="10 caractères minimum"
+          required
+        />
+        <Show when={error()}>
+          <Notice tone="danger">{error()}</Notice>
+        </Show>
+        <Button type="submit" variant="solid" disabled={busy()}>
+          Créer le site
+        </Button>
+      </form>
+    </AuthCard>
+  );
+}
+
 export function LoginView() {
+  const [setup] = createResource(() =>
+    api<{ needed: boolean }>("/api/auth/setup").catch(() => ({
+      needed: false,
+    })),
+  );
+  return (
+    <Show when={setup()}>
+      {(s) => (
+        <Show when={!s().needed} fallback={<SetupForm />}>
+          <LoginForm />
+        </Show>
+      )}
+    </Show>
+  );
+}
+
+function LoginForm() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [error, setError] = createSignal("");
