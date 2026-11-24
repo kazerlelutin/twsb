@@ -510,9 +510,6 @@ function ConfigPanel(props: {
           placeholder="https://mon-site.fr"
           value={publicUrl()}
           disabled={sources().publicUrl === "env"}
-          hint={
-            sources().publicUrl === "env" ? "Fixée par PUBLIC_URL" : undefined
-          }
           onInput={(e) => setPublicUrl(e.currentTarget.value)}
         />
         <fieldset class="ui-config__smtp" disabled={sources().smtp === "env"}>

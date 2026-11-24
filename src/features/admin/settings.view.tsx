@@ -703,7 +703,8 @@ export function BackupView() {
         <div class="ui-data__row">
           <Panel title="Exporter">
             <p class="ui-muted" style={{ margin: "0 0 1rem" }}>
-              site.sqlite | media/ | static/
+              Contient la base de données, les médias et une version statique du
+              site.
             </p>
             <LinkButton
               variant="solid"
