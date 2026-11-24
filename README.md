@@ -9,7 +9,7 @@ Constructeur de site léger, tout-en-un : pages composées par blocs, articles r
 ## Démarrer
 
 ```bash
-make dev              # app + Mailpit, http://localhost:3000/admin
+make dev              # app + Mailpit (Dockerfile.dev), http://localhost:3000/admin
                       # e-mails de test : http://localhost:8025
 ```
 
@@ -74,7 +74,14 @@ Chaque version publiée (tag `vX.Y.Z`) fournit :
 - une **image Docker** : `ghcr.io/kazerlelutin/twsb:X.Y.Z` (et `:latest`) ;
 - une **archive de build** prête à lancer, `twsb-vX.Y.Z.tar.gz`, avec ses empreintes (`checksums.txt`) dans la Release GitHub.
 
-**Docker / CapRover** : déployer l'image, monter `/data`, exposer le port `3000`. Avec CapRover, un `captain-definition` réduit à `{"schemaVersion": 2, "imageName": "ghcr.io/kazerlelutin/twsb:latest"}` suffit (ou le `Dockerfile` du dépôt pour construire depuis les sources).
+**CapRover** (port du conteneur `3000`, **Persistent Data** sur `/data`) :
+
+- **Image publiée** (rien à construire) : dans l'app, *Deployment → Deploy via upload*, envoyer `twsb-caprover-vX.Y.Z.tar` de la Release. Il ne contient que le `captain-definition` qui pointe vers l'image GHCR.
+- **Depuis les sources** : `bun run deploy:caprover` crée `dist/twsb-source-vX.Y.Z.tar` (sources commitées, `captain-definition` à la racine) à envoyer de la même façon, ou `caprover deploy` depuis le dépôt. Le déploiement depuis GitHub (webhook) fonctionne aussi.
+
+CapRover exige `captain-definition` **à la racine** de l'archive : ne pas compresser le dossier du projet lui-même (`tar -czf x.tar.gz twsb/`).
+
+**Docker** : `docker run -p 3000:3000 -v twsb-data:/data ghcr.io/kazerlelutin/twsb:latest`.
 
 **Sans Docker** (Bun ≥ 1.3) :
 

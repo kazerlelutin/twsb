@@ -4,7 +4,7 @@ services:
   app:
     build:
       context: .
-      target: development
+      dockerfile: Dockerfile.dev
     command: ["sh", "-c", "bun install --frozen-lockfile && exec bun run dev"]
     ports:
       - "3000:3000"

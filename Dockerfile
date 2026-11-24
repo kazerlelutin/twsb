@@ -1,18 +1,9 @@
 # syntax=docker/dockerfile:1
+# Image de production (CapRover, Docker). Le développement utilise Dockerfile.dev.
 FROM oven/bun:1.4 AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
-
-# Développement : tout l'outillage, y compris Chromium pour les tests E2E.
-FROM deps AS development
-# Node exécute Vitest et Playwright comme en local ; l'application tourne sous Bun.
-COPY --from=node:24-slim /usr/local/bin/node /usr/local/bin/node
-RUN bunx playwright install --with-deps chromium
-COPY . .
-ENV DATA_DIR=/data
-EXPOSE 3000
-CMD ["bun", "run", "dev"]
 
 FROM deps AS build
 COPY . .

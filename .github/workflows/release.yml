@@ -37,6 +37,8 @@ jobs:
           mkdir -p dist
           tar -czf "dist/twsb-v$VERSION.tar.gz" .output launcher package.json README.md
           (cd dist && sha256sum "twsb-v$VERSION.tar.gz" > checksums.txt)
+          # CapRover : « Deploy via upload » de ce fichier (captain-definition vers l'image).
+          bun scripts/caprover-tar.ts "$VERSION"
 
       - name: Release GitHub
         env:

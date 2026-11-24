@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "test:e2e": "bddgen && playwright test",
     "check": "bun run lint && bun run typecheck && bun run test",
-    "release": "bun scripts/release.ts"
+    "release": "bun scripts/release.ts",
+    "deploy:caprover": "bun scripts/caprover-tar.ts"
   },
   "dependencies": {
     "@solidjs/meta": "^0.29.4",
