@@ -109,8 +109,11 @@ describe("configuration après installation", () => {
   });
 });
 
-/* Faux GitHub : une Release avec son archive de build et ses empreintes */
-function fakeRelease(version: string, tamper = false) {
+/* Faux GitHub : une Release avec son archive de build, ses empreintes et ses notes */
+function fakeRelease(
+  version: string,
+  options: { tamper?: boolean; apiStatus?: number; webStatus?: number } = {},
+) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "twsb-release-"));
   fs.mkdirSync(path.join(work, ".output", "server"), { recursive: true });
   fs.writeFileSync(path.join(work, ".output", "server", "index.mjs"), "// app");
@@ -120,39 +123,81 @@ function fakeRelease(version: string, tamper = false) {
   spawnSync("tar", ["-czf", archive, "-C", work, ".output"]);
   const bytes = fs.readFileSync(archive);
   const sum = createHash("sha256")
-    .update(tamper ? "autre" : bytes)
+    .update(options.tamper ? "autre" : bytes)
     .digest("hex");
-  const release = {
-    tag_name: `v${version}`,
-    name: `TWSB ${version}`,
-    body: "- Nouveautés",
-    published_at: "2026-12-01T00:00:00Z",
-    html_url: "https://github.com/x/twsb/releases/v",
-    assets: [
-      {
-        name,
-        url: "api-archive",
-        browser_download_url: "https://dl/archive",
-        size: bytes.length,
+  const tag = `v${version}`;
+  const limited = (status: number) =>
+    new Response("limite", {
+      status,
+      headers: {
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": "1795600000",
       },
-      {
-        name: "checksums.txt",
-        url: "api-sums",
-        browser_download_url: "https://dl/sums",
-        size: 1,
-      },
-    ],
-  };
+    });
+  const calls: string[] = [];
   vi.stubGlobal("fetch", async (input: string | URL) => {
     const url = String(input);
-    if (url.endsWith("/releases/latest")) return Response.json(release);
-    if (url === "https://dl/archive") return new Response(bytes);
-    if (url === "https://dl/sums") return new Response(`${sum}  ${name}\n`);
+    calls.push(url);
+    if (url.startsWith("https://api.github.com/")) {
+      if (options.apiStatus) return limited(options.apiStatus);
+      return Response.json({ tag_name: tag, body: "- Par l'API", assets: [] });
+    }
+    if (url.endsWith("/releases/latest")) {
+      if (options.webStatus) return limited(options.webStatus);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: `https://github.com/kazerlelutin/twsb/releases/tag/${tag}`,
+        },
+      });
+    }
+    if (url.endsWith(`/download/${tag}/release-notes.md`))
+      return new Response("## Nouveautés\n\n- Nouveautés");
+    if (url.endsWith(`/download/${tag}/${name}`)) return new Response(bytes);
+    if (url.endsWith(`/download/${tag}/checksums.txt`))
+      return new Response(`${sum}  ${name}\n`);
     return new Response("?", { status: 404 });
   });
+  return calls;
 }
 
 describe("mises à jour", () => {
+  test("sans jeton, la dernière version est lue hors API (pas de limite à 60/h)", async () => {
+    const calls = fakeRelease("9.0.0");
+    const status = await call(system.status, {
+      cookie: session,
+      path: "/api/system?check=1",
+    });
+    expect(status.data.latest).toMatchObject({
+      version: "9.0.0",
+      notes: "## Nouveautés\n\n- Nouveautés",
+      url: "https://github.com/kazerlelutin/twsb/releases/tag/v9.0.0",
+    });
+    expect(calls.some((u) => u.includes("api.github.com"))).toBe(false);
+  });
+
+  test("API limitée avec un jeton : bascule sur les pages publiques ; sinon message clair", async () => {
+    process.env.GITHUB_TOKEN = "jeton-de-test";
+    try {
+      fakeRelease("9.0.0", { apiStatus: 403 });
+      const ok = await call(system.status, {
+        cookie: session,
+        path: "/api/system?check=1",
+      });
+      expect(ok.data.latest.version).toBe("9.0.0");
+      fakeRelease("9.0.0", { apiStatus: 403, webStatus: 429 });
+      const ko = await call(system.status, {
+        cookie: session,
+        path: "/api/system?check=1",
+      });
+      expect(ko.data.checkError).toMatch(
+        /^Limite de requêtes GitHub atteinte\. Réessayez vers \d\d:\d\d\.$/,
+      );
+    } finally {
+      delete process.env.GITHUB_TOKEN;
+    }
+  });
+
   test("nouvelle version : sauvegarde, archive vérifiée, installée, en attente d'essai", async () => {
     fakeRelease("9.0.0");
     const status = await call(system.status, {
@@ -161,7 +206,7 @@ describe("mises à jour", () => {
     });
     expect(status.data).toMatchObject({
       updateAvailable: true,
-      latest: { version: "9.0.0", notes: "- Nouveautés" },
+      latest: { version: "9.0.0" },
     });
     const res = await call(system.update, { method: "POST", cookie: session });
     // Hors lanceur (tests, dev) : redémarrage manuel annoncé.
@@ -189,7 +234,7 @@ describe("mises à jour", () => {
   });
 
   test("empreinte invalide : rien n'est installé", async () => {
-    fakeRelease("9.0.1", true);
+    fakeRelease("9.0.1", { tamper: true });
     const res = await call(system.update, { method: "POST", cookie: session });
     expect(res.data.progress).toMatchObject({ step: "error" });
     expect(res.data.progress.message).toContain("Empreinte");

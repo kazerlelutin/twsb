@@ -122,7 +122,8 @@ Tout se règle dans l'admin. Une variable d'environnement, si elle est définie,
 | `PORT` | Port HTTP (`3000`). |
 | `TWSB_UPDATE_REPO` | Dépôt GitHub des versions (`kazerlelutin/twsb`). |
 | `TWSB_UPDATE_API` | API compatible GitHub (GitHub Enterprise, miroir). |
-| `GITHUB_TOKEN` | Accès aux Releases si le dépôt des versions est privé. |
+| `GITHUB_TOKEN` | Accès aux Releases si le dépôt des versions est privé. Sans jeton, les versions sont lues sur les pages publiques de GitHub, hors de la limite de 60 requêtes par heure de son API. |
+| `TWSB_UPDATE_WEB` | Site GitHub des Releases (`https://github.com`). |
 | `TWSB_HEALTH_TIMEOUT` | Durée d'essai d'une nouvelle version, en millisecondes (`90000`). |
 
 ## Sauvegarder et migrer

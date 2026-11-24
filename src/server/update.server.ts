@@ -89,24 +89,99 @@ export function parseRelease(data: {
 let latest: { at: number; release?: ReleaseInfo; error?: string } | undefined;
 const CHECK_EVERY = 6 * 3600_000;
 
+/** Site GitHub (pages publiques des Releases, hors API). */
+const webBase = () =>
+  (process.env.TWSB_UPDATE_WEB || "https://github.com").replace(/\/+$/, "");
+
+/** Refus de GitHub expliqué : limite de requêtes, accès refusé… */
+function refusal(res: Response) {
+  const reset = Number(res.headers.get("x-ratelimit-reset"));
+  if (
+    res.status === 429 ||
+    (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0")
+  ) {
+    const when = reset
+      ? ` Réessayez vers ${new Date(reset * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`
+      : "";
+    return new UpdateError(`Limite de requêtes GitHub atteinte.${when}`);
+  }
+  if (res.status === 404)
+    return new UpdateError(
+      token()
+        ? "Aucune version publiée."
+        : "Aucune version trouvée (dépôt privé : jeton GITHUB_TOKEN requis).",
+    );
+  return new UpdateError(`GitHub refuse la demande (${res.status}).`);
+}
+
+/** Par l'API : notes de version et fichiers exacts (avec jeton pour un dépôt privé). */
+async function latestFromApi(): Promise<ReleaseInfo> {
+  const res = await fetch(`${apiBase()}/repos/${repo()}/releases/latest`, {
+    headers: headers(),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw refusal(res);
+  return parseRelease(await res.json());
+}
+
+/**
+ * Sans l'API (dépôt public) : la page « dernière version » redirige vers son tag,
+ * les fichiers et les notes (release-notes.md) se téléchargent directement.
+ */
+async function latestFromWeb(): Promise<ReleaseInfo> {
+  const base = `${webBase()}/${repo()}/releases`;
+  const res = await fetch(`${base}/latest`, {
+    redirect: "manual",
+    headers: { "user-agent": "twsb-updater" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const tag = res.headers
+    .get("location")
+    ?.match(/\/releases\/tag\/([^/?#]+)/)?.[1];
+  if (!tag)
+    throw res.status >= 400
+      ? refusal(res)
+      : new UpdateError("Aucune version publiée.");
+  const version = cleanVersion(decodeURIComponent(tag));
+  const download = (name: string) => `${base}/download/${tag}/${name}`;
+  const notes = await fetch(download("release-notes.md"), {
+    headers: { "user-agent": "twsb-updater" },
+    signal: AbortSignal.timeout(10_000),
+  })
+    .then((r) => (r.ok ? r.text() : ""))
+    .catch(() => "");
+  const archive = `twsb-v${version}.tar.gz`;
+  return {
+    version,
+    name: `TWSB ${version}`,
+    notes: notes.slice(0, 20_000),
+    publishedAt: "",
+    url: `${base}/tag/${tag}`,
+    asset: { name: archive, url: download(archive), size: 0 },
+    checksums: { name: "checksums.txt", url: download("checksums.txt") },
+  };
+}
+
 /** Dernière version publiée (mise en cache six heures). */
 export async function checkLatest(force = false) {
   // Un échec (GitHub injoignable) n'est retenu que quelques minutes.
   const ttl = latest?.error ? 5 * 60_000 : CHECK_EVERY;
   if (!force && latest && Date.now() - latest.at < ttl) return latest;
   try {
-    const res = await fetch(`${apiBase()}/repos/${repo()}/releases/latest`, {
-      headers: headers(),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (res.status === 404)
-      throw new UpdateError(
-        token()
-          ? "Aucune version publiée."
-          : "Aucune version trouvée (dépôt privé : jeton GITHUB_TOKEN requis).",
-      );
-    if (!res.ok) throw new UpdateError(`GitHub répond ${res.status}.`);
-    latest = { at: Date.now(), release: parseRelease(await res.json()) };
+    let release: ReleaseInfo;
+    if (token()) {
+      try {
+        release = await latestFromApi();
+      } catch (error) {
+        // API refusée (limite…) : les pages publiques suffisent si le dépôt l'est.
+        release = await latestFromWeb().catch(() => {
+          throw error;
+        });
+      }
+    } else {
+      release = await latestFromWeb();
+    }
+    latest = { at: Date.now(), release };
   } catch (error) {
     latest = {
       at: Date.now(),
