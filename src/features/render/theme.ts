@@ -94,7 +94,7 @@ a.ws-card:hover h3{color:var(--ws-primary)}.ws-card h3{margin:0;font-size:1.2rem
 .ws-footer{margin-top:auto}
 .ws-site{min-height:100svh;display:flex;flex-direction:column}
 .ws-main{flex:1}
-.ws-prose{max-width:46rem;margin-inline:auto}.ws-prose img{border-radius:var(--ws-radius);margin:1.5rem 0}.ws-prose blockquote{margin:1.5rem 0;padding-left:1rem;border-left:4px solid var(--ws-primary);color:var(--ws-muted)}
+.ws-prose{max-width:46rem}.ws-prose img{border-radius:var(--ws-radius);margin:1.5rem 0}.ws-prose blockquote{margin:1.5rem 0;padding-left:1rem;border-left:4px solid var(--ws-primary);color:var(--ws-muted)}
 .ws-prose pre{background:var(--ws-secondary);color:#fff;padding:1rem;border-radius:var(--ws-radius);overflow:auto}.ws-prose ul[data-type=taskList]{list-style:none;padding-left:0}.ws-prose ul[data-type=taskList] li{display:flex;gap:.5rem}
 .ws-meta{color:inherit;opacity:.8;font-size:.95rem}
 .ws-columns--d-reverse{direction:rtl}.ws-columns--d-reverse>*{direction:ltr}

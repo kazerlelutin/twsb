@@ -75,54 +75,52 @@ const pageTemplate = (): Block[] => [
   ]),
 ];
 
-/** Mise en page de l'accueil : le contenu remplit le titre et le texte d'introduction. */
+/** Mise en page de l'accueil : titre et texte du contenu, puis les derniers articles. */
 const homeTemplate = (): Block[] => [
   b("section", { width: "container" }, [
-    b("content-title", { align: "center" }),
+    b("content-title", { align: "left" }),
     b("content-body"),
   ]),
   b(
     "section",
     { width: "container" },
     [
-      b("heading", {
-        text: "Ce que nous faisons",
-        level: "2",
-        align: "center",
-      }),
-      b("features", {
+      b("heading", { text: "Derniers articles", level: "2" }),
+      b("posts", {
+        typeId: "article",
+        limit: 3,
+        display: "grid",
         columns: 3,
-        align: "left",
-        items: [
-          {
-            icon: "◆",
-            title: "Concevoir",
-            text: "Des pages claires et rapides.",
-          },
-          {
-            icon: "◆",
-            title: "Publier",
-            text: "Articles et pages au même endroit.",
-          },
-          { icon: "◆", title: "Partager", text: "Un site léger, partout." },
-        ],
+        showCover: true,
+        showExcerpt: true,
+        showDate: true,
       }),
     ],
     { desktop: { background: "var(--ws-surface)" } },
   ),
-  b("section", { width: "container" }, [
-    b("heading", { text: "Derniers articles", level: "2" }),
-    b("posts", {
-      typeId: "article",
-      limit: 3,
-      display: "grid",
-      columns: 3,
-      showCover: true,
-      showExcerpt: true,
-      showDate: true,
-    }),
-  ]),
 ];
+
+/** Texte de la page d'accueil d'exemple : comment elle est faite, par où commencer. */
+const HOME_BODY = `<p>Cette page est un exemple. Elle montre comment fonctionne le site et vous pouvez la modifier ou la supprimer.</p>
+<h2>Comment cette page est construite</h2>
+<p>C'est un contenu du type Accueil. Son titre et ce texte se modifient dans Contenus. La disposition, avec la liste des derniers articles en dessous, se règle dans Types, en ouvrant Accueil.</p>
+<h2>Par où commencer</h2>
+<ul>
+<li>Donnez son nom au site et choisissez le logo et les couleurs dans Identité.</li>
+<li>Écrivez un article depuis Contenus, avec le bouton Nouveau.</li>
+<li>Ajoutez des liens au menu du haut dans Menus.</li>
+<li>Si vos contenus ont besoin de champs à eux, créez un type. Un type Événement peut par exemple avoir une date et un lieu.</li>
+</ul>`;
+
+/** Article d'exemple : ce que sait faire l'éditeur de texte. */
+const ARTICLE_BODY = `<p>Cet article montre ce que sait faire l'éditeur de texte. Ouvrez-le dans Contenus pour voir comment il est écrit.</p>
+<h2>Insérer un bloc</h2>
+<p>Tapez <code>/</code> en début de ligne. Un menu propose des titres, des listes, une citation, du code ou une image de la médiathèque.</p>
+<h2>Mettre en forme</h2>
+<p>Sélectionnez quelques mots. Une bulle apparaît pour les passer en <strong>gras</strong> ou en faire un lien.</p>
+<blockquote><p>Collez l'adresse d'une vidéo YouTube sur une ligne vide et elle s'affiche dans l'article.</p></blockquote>
+<h2>Publier</h2>
+<p>Un article reste en brouillon tant que vous ne cliquez pas sur Publier. Jusqu'à sa première publication, son adresse suit le titre.</p>`;
 
 /** Données de départ : layout, types, menu et page d'accueil. */
 export function seed(database: Db) {
@@ -177,18 +175,18 @@ export function seed(database: Db) {
   }
   const home = saveContent(undefined, {
     typeId: "accueil",
-    title: "Votre site, simplement",
+    title: "Votre site est en ligne",
     slug: "accueil",
     status: "published",
-    body: "<p>Chaque type définit sa mise en page ; chaque contenu remplit ses champs.</p>",
+    body: HOME_BODY,
   });
   saveContent(undefined, {
     typeId: "article",
     title: "Premier article",
     slug: "premier-article",
     status: "published",
-    excerpt: "Un exemple pour démarrer.",
-    body: "<p>Écrivez ici. Tapez <code>/</code> dans l'éditeur pour insérer un bloc.</p>",
+    excerpt: "Un article d'exemple qui montre ce que sait faire l'éditeur.",
+    body: ARTICLE_BODY,
   });
   saveIdentity({ ...getIdentity(), homeId: home.id });
 }

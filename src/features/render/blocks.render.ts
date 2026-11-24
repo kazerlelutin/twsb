@@ -470,7 +470,11 @@ const RENDERERS: Record<string, Renderer> = {
     )
       .map(
         (i, n) =>
-          `<div class="ws-card"><span class="ws-feature__icon" aria-hidden="true"${ed(ctx, `items.${n}.icon`)}>${esc(i.icon)}</span><h3${ed(ctx, `items.${n}.title`)}>${esc(
+          `<div class="ws-card">${
+            str(i.icon) || ctx.editor
+              ? `<span class="ws-feature__icon" aria-hidden="true"${ed(ctx, `items.${n}.icon`)}>${esc(i.icon)}</span>`
+              : ""
+          }<h3${ed(ctx, `items.${n}.title`)}>${esc(
             i.title,
           )}</h3><p${ed(ctx, `items.${n}.text`)}>${esc(i.text)}</p></div>`,
       )

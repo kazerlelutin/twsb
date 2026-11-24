@@ -105,7 +105,7 @@ function IdentityPreview(props: { identity: Identity }) {
         class="ui-id-preview__title"
         style={{ "font-family": font(props.identity.fonts.heading) }}
       >
-        Un titre qui donne le ton
+        Titre de la page
       </p>
       <p class="ui-id-preview__text">
         Le texte courant de vos pages : accents é à ç, chiffres 0123, «

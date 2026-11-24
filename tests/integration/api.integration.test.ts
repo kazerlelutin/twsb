@@ -124,7 +124,7 @@ describe("contenus et site public", () => {
   test("le site démarre avec une page d'accueil et un article", async () => {
     const home = await page("/");
     expect(home.status).toBe(200);
-    expect(home.html).toContain("Votre site, simplement");
+    expect(home.html).toContain("Votre site est en ligne");
     expect(home.html).toContain("Premier article");
     const article = await page("/blog/premier-article");
     expect(article.html).toContain("<h1");

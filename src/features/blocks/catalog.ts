@@ -328,7 +328,7 @@ export const BLOCKS: BlockDef[] = [
       { key: "text", label: "Citation", type: "textarea" },
       { key: "author", label: "Auteur", type: "text" },
     ],
-    defaults: () => ({ text: "Une phrase qui compte.", author: "" }),
+    defaults: () => ({ text: "Texte de la citation.", author: "" }),
   },
   {
     type: "hero",
@@ -373,8 +373,8 @@ export const BLOCKS: BlockDef[] = [
     ],
     defaults: () => ({
       eyebrow: "",
-      title: "Un titre clair",
-      text: "Une phrase qui explique la promesse.",
+      title: "Titre de la bannière",
+      text: "Texte de la bannière.",
       media: "",
       variant: "center",
       primaryLabel: "Commencer",
@@ -405,11 +405,10 @@ export const BLOCKS: BlockDef[] = [
     ],
     defaults: () => ({
       items: [
-        { icon: "◆", title: "Simple", text: "Une idée par carte." },
-        { icon: "◆", title: "Rapide", text: "Une idée par carte." },
-        { icon: "◆", title: "Fiable", text: "Une idée par carte." },
+        { icon: "", title: "Premier point", text: "Texte du point." },
+        { icon: "", title: "Second point", text: "Texte du point." },
       ],
-      columns: 3,
+      columns: 2,
       align: "left",
     }),
   },
@@ -435,11 +434,20 @@ export const BLOCKS: BlockDef[] = [
     ],
     defaults: () => ({
       items: [
-        { media: "", title: "Carte", text: "Description courte.", url: "" },
-        { media: "", title: "Carte", text: "Description courte.", url: "" },
-        { media: "", title: "Carte", text: "Description courte.", url: "" },
+        {
+          media: "",
+          title: "Titre de la carte",
+          text: "Texte de la carte.",
+          url: "",
+        },
+        {
+          media: "",
+          title: "Titre de la carte",
+          text: "Texte de la carte.",
+          url: "",
+        },
       ],
-      columns: 3,
+      columns: 2,
     }),
   },
   {
@@ -461,9 +469,8 @@ export const BLOCKS: BlockDef[] = [
     ],
     defaults: () => ({
       items: [
-        { value: "120", label: "Projets" },
-        { value: "98 %", label: "Satisfaction" },
-        { value: "24 h", label: "Réponse" },
+        { value: "12", label: "Libellé du chiffre" },
+        { value: "40", label: "Libellé du chiffre" },
       ],
     }),
   },
@@ -490,7 +497,7 @@ export const BLOCKS: BlockDef[] = [
     defaults: () => ({
       items: [
         {
-          text: "Un retour client.",
+          text: "Texte du témoignage.",
           name: "Camille",
           role: "Cliente",
           media: "",
@@ -537,7 +544,7 @@ export const BLOCKS: BlockDef[] = [
       },
     ],
     defaults: () => ({
-      title: "Prêt ?",
+      title: "Titre de l'appel",
       text: "",
       label: "Nous contacter",
       url: "/contact",
