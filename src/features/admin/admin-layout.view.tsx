@@ -6,7 +6,12 @@ import { AppShell, type NavItem } from "../ui/shell.view";
 import { logout, session } from "./session";
 import { toasts } from "./toast";
 
-const PUBLIC = ["/admin/login", "/admin/activate", "/admin/forgot"];
+const PUBLIC = [
+  "/admin/login",
+  "/admin/setup",
+  "/admin/activate",
+  "/admin/forgot",
+];
 
 const items = (admin: boolean): NavItem[] => [
   {

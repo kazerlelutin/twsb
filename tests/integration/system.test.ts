@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { login, setup, system } from "~/server/api.server";
 import { db } from "~/server/db.server";
+import { publicResponse } from "~/server/public.server";
 import { sitemap } from "~/server/site.server";
 import { readState } from "../../launcher/core.mjs";
 import { ADMIN, call, freshSite, sessionFrom } from "./helpers";
@@ -28,6 +29,10 @@ describe("première installation", () => {
     delete process.env.ADMIN_EMAIL;
     const status = await call(setup.status);
     expect(status.data.needed).toBe(true);
+    // Le site public envoie vers l'installation tant qu'aucun compte n'existe.
+    const before = await publicResponse(new Request("http://site.test/"));
+    expect(before?.status).toBe(302);
+    expect(before?.headers.get("location")).toBe("/admin/setup");
     const created = await call(setup.create, {
       origin: "http://site.test",
       body: {
@@ -40,6 +45,9 @@ describe("première installation", () => {
     expect(created.status).toBe(201);
     expect(created.headers.get("set-cookie")).toContain("ws_session=");
     expect((await call(setup.status)).data.needed).toBe(false);
+    expect(
+      (await publicResponse(new Request("http://site.test/")))?.status,
+    ).toBe(200);
     const again = await call(setup.create, {
       origin: "http://site.test",
       body: {

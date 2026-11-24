@@ -5,6 +5,7 @@ import { openDb, setDb } from "~/server/db.server";
 import { resetEnv } from "~/server/env.server";
 import type { ApiEvent } from "~/server/http.server";
 import { type Mail, setMailer } from "~/server/mail.server";
+import { resetInstalled } from "~/server/public.server";
 import { resetAdminCheck } from "~/server/seed.server";
 import "~/server/seed.server";
 import { testEnv } from "../env";
@@ -20,6 +21,7 @@ export function freshSite() {
   delete process.env.SMTP_HOST;
   resetEnv();
   resetAdminCheck();
+  resetInstalled();
   setDb(openDb(path.join(dir, "site.sqlite")));
   const mails: Mail[] = [];
   setMailer(async (mail) => {

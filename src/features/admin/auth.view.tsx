@@ -1,5 +1,11 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createResource, createSignal, type JSX, Show } from "solid-js";
+import {
+  createEffect,
+  createResource,
+  createSignal,
+  type JSX,
+  Show,
+} from "solid-js";
 import { Button } from "../ui/button.view";
 import { TextField } from "../ui/field.view";
 import { Notice, Panel } from "../ui/layout.view";
@@ -89,19 +95,34 @@ function SetupForm() {
   );
 }
 
+const fetchSetup = () =>
+  api<{ needed: boolean }>("/api/auth/setup").catch(() => ({ needed: false }));
+
+/** Connexion ; un site jamais installé envoie vers l'installation. */
 export function LoginView() {
-  const [setup] = createResource(() =>
-    api<{ needed: boolean }>("/api/auth/setup").catch(() => ({
-      needed: false,
-    })),
-  );
+  const navigate = useNavigate();
+  const [setup] = createResource(fetchSetup);
+  createEffect(() => {
+    if (setup()?.needed) navigate("/admin/setup", { replace: true });
+  });
   return (
-    <Show when={setup()}>
-      {(s) => (
-        <Show when={!s().needed} fallback={<SetupForm />}>
-          <LoginForm />
-        </Show>
-      )}
+    <Show when={setup() && !setup()?.needed}>
+      <LoginForm />
+    </Show>
+  );
+}
+
+/** Installation (premier compte) ; une fois installé, renvoie vers la connexion. */
+export function SetupView() {
+  const navigate = useNavigate();
+  const [setup] = createResource(fetchSetup);
+  createEffect(() => {
+    if (setup() && !setup()?.needed)
+      navigate("/admin/login", { replace: true });
+  });
+  return (
+    <Show when={setup()?.needed}>
+      <SetupForm />
     </Show>
   );
 }

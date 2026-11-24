@@ -1,6 +1,8 @@
 import { iconPng, readMediaFile } from "./media.server";
 import { getIdentity } from "./repo.server";
+import { ensureAdmin } from "./seed.server";
 import { renderPublic, robots, sitemap } from "./site.server";
+import { countUsers } from "./users.server";
 
 const APP_PREFIXES = [
   "/admin",
@@ -50,6 +52,13 @@ export async function publicResponse(
     });
   if (/\.[a-z0-9]{1,5}$/i.test(pathname)) return undefined;
 
+  // Site pas encore installé (aucun compte) : on va d'abord à l'installation.
+  if (!(await installed()))
+    return new Response(null, {
+      status: 302,
+      headers: { location: "/admin/setup", "cache-control": "no-store" },
+    });
+
   const page = renderPublic(pathname);
   if (page.location)
     return new Response(null, {
@@ -58,6 +67,19 @@ export async function publicResponse(
     });
   return html(page.html, page.status);
 }
+
+let isInstalled = false;
+/** Un compte existe (créé à l'installation ou depuis ADMIN_EMAIL / ADMIN_PASSWORD). */
+export async function installed() {
+  if (isInstalled) return true;
+  await ensureAdmin();
+  isInstalled = countUsers() > 0;
+  return isInstalled;
+}
+/** Tests : un nouveau site repart non installé. */
+export const resetInstalled = () => {
+  isInstalled = false;
+};
 
 /** Médias et icônes : servis aussi par une route Nitro dédiée (voir vite.config.ts). */
 export async function assetResponse(

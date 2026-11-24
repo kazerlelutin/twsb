@@ -151,7 +151,30 @@ async function start(target) {
   return exited;
 }
 
+/** Le dossier de données doit exister et être accessible en écriture (volume persistant). */
+function checkDataDir() {
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    const probe = path.join(dataDir, `.write-test-${process.pid}`);
+    fs.writeFileSync(probe, "ok");
+    fs.rmSync(probe);
+  } catch (error) {
+    const relative = !path.isAbsolute(process.env.DATA_DIR || "/");
+    console.error(
+      [
+        `[lanceur] Dossier de données inutilisable : ${dataDir} (${error.code ?? error.message}).`,
+        relative
+          ? "[lanceur] DATA_DIR est un chemin relatif : utilisez un chemin absolu, par exemple /data, ou retirez la variable (l'image utilise /data)."
+          : "[lanceur] Vérifiez que ce dossier est un volume persistant accessible en écriture (CapRover : Répertoire persistant, chemin dans l'app /data).",
+      ].join("\n"),
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
+  checkDataDir();
+  log(`données : ${dataDir} | port : ${port}`);
   while (true) {
     const state = readState(dataDir);
     if (state.restore) {
